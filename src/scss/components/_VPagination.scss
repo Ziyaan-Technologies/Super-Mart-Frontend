@@ -1,0 +1,69 @@
+// Table pagination bar: "Showing X to Y of Z" + per-page select + page buttons.
+
+.ui-pagination {
+  gap: 16px;
+
+  .ui-pagination__controls {
+    gap: 16px;
+  }
+
+  .custom-pagination {
+    gap: 4px;
+  }
+
+  .showing-orders-text {
+    font-size: 14px;
+
+    .underlined-link {
+      color: #111827 !important; // force black — overrides default <a> link color
+      border-bottom: 1px solid #111827;
+      padding-bottom: 2px;
+
+      &:hover {
+        opacity: 0.8;
+        color: #111827 !important;
+      }
+    }
+  }
+
+  .items-per-page-select {
+    width: 130px;
+
+    .v-field {
+      border-radius: 8px;
+      background-color: #fff;
+      min-height: 36px;
+
+      .v-field__input {
+        min-height: 36px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+      }
+    }
+  }
+
+  .pagination-nav-btn {
+    border-radius: 8px !important;
+    border-color: #e5e7eb !important;
+    background-color: #fff;
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .pagination-num-btn {
+    border-radius: 8px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    padding: 0 !important;
+
+    &.text-white {
+      background-color: #1565c0 !important;
+    }
+  }
+
+  .pagination-dots {
+    color: #9ca3af;
+    letter-spacing: 1px;
+  }
+}

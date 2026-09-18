@@ -1,0 +1,73 @@
+// Styles for the reusable .ui-modal shell used inside v-dialog.
+
+.ui-modal {
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* ── Header ── */
+.ui-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background-color: rgb(var(--v-theme-primary));
+  border-radius: 12px 12px 0 0;
+}
+
+.ui-modal__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.4;
+}
+
+.ui-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 2px;
+  }
+}
+
+/* ── Body ── */
+.ui-modal__body {
+  padding: 24px 24px 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── Divider ── */
+.ui-modal__divider {
+  height: 1px;
+  background-color: #E4E7EC;
+  margin: 0 24px;
+}
+
+/* ── Footer ── */
+.ui-modal__footer {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: flex-end;
+}

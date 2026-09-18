@@ -1,0 +1,14 @@
+{
+  "extends": "@tsconfig/node20/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "composite": true,
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "verbatimModuleSyntax": true,
+    "ignoreDeprecations": "5.0"
+  },
+  "include": ["vite.config.*"],
+}

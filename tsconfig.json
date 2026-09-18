@@ -1,0 +1,36 @@
+{
+    "extends": "@vue/tsconfig/tsconfig.dom.json",
+    "include": [
+        "env.d.ts",
+        "src/**/*",
+        "src/**/*.vue"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ],
+    "compilerOptions": {
+        "outDir": "./dist",
+        "removeComments": true,
+        "skipLibCheck": true,
+        "verbatimModuleSyntax": true,
+        "ignoreDeprecations": "5.0",
+        "baseUrl": ".",
+        "paths": {
+            "@/*": [
+                "./src/*"
+            ]
+        },
+        "types": [
+            "google-libphonenumber",
+            "vite/client",
+        ],
+        "typeRoots": ["./types", "./node_modules/@types"],
+        "allowJs": true
+    },
+    "references": [
+        {
+            "path": "./tsconfig.vite-config.json"
+        }
+    ]
+}

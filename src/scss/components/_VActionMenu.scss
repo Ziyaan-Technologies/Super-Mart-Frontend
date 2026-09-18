@@ -1,0 +1,73 @@
+// 3-dot row-action button + dropdown of action buttons (Edit / View / Delete …).
+
+.ui-action-btn {
+  border-color: #e5e7eb !important;
+  background: #ffffff;
+  color: #6b7280 !important;
+  border-radius: 8px;
+  width: 32px !important;
+  height: 32px !important;
+
+  &:hover {
+    background: #f9fafb;
+    border-color: #d1d5db !important;
+    color: #111827 !important;
+  }
+}
+
+.ui-action-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(16, 24, 40, 0.12);
+  min-width: 140px;
+}
+
+.ui-action-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.ui-action-item--filled {
+  background: #1565c0;
+  color: #ffffff;
+
+  &:hover {
+    opacity: 0.92;
+  }
+}
+
+.ui-action-item--outline {
+  background: #ffffff;
+  border-color: #1565c0;
+  color: #1565c0;
+
+  &:hover {
+    background: #eef4fc;
+  }
+}
+
+.ui-action-item--danger {
+  background: #ffffff;
+  border-color: #ef4444;
+  color: #ef4444;
+
+  &:hover {
+    background: #fef2f2;
+  }
+}

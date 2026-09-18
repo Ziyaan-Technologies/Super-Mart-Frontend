@@ -1,0 +1,95 @@
+.v-btn-group .v-btn {
+    height: inherit !important;
+}
+
+.v-btn-group {
+    border-color: rgb(var(--v-theme-borderColor)) !important;
+}
+.v-btn{
+    text-transform: capitalize;
+    letter-spacing: 0;
+}
+.v-btn--elevated:hover{
+    box-shadow: none;
+}
+
+.ui-btn-cancel {
+    border: 1.5px solid #D0D5DD !important;
+    background-color: #ffffff !important;
+    color: #344054 !important;
+    font-weight: 500;
+    border-radius: 8px !important;
+    padding: 0 20px !important;
+    min-width: 90px;
+    box-shadow: none !important;
+}
+
+.ui-btn-submit {
+    background-color: rgb(var(--v-theme-primary)) !important;
+    color: #ffffff !important;
+    font-weight: 500;
+    border-radius: 8px !important;
+    padding: 0 20px !important;
+    min-width: 90px;
+    box-shadow: none !important;
+
+    &:hover {
+        background-color: rgba(var(--v-theme-primary), 0.88) !important;
+    }
+}
+
+// Shared action buttons (BtnFilled / BtnOutlined). The desktop POS skin lives in layout/_desktop.scss.
+.app-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 20px;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    color: rgb(var(--v-theme-textPrimary));
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+        background: rgb(var(--v-theme-hoverColor));
+    }
+
+    &:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    &.app-btn--primary {
+        border-color: rgb(var(--v-theme-primary));
+        background: rgb(var(--v-theme-primary));
+        color: #fff;
+        font-weight: 600;
+
+        &:hover {
+            background: #0d4c96;
+        }
+    }
+
+    &.app-btn--danger {
+        border-color: rgb(var(--v-theme-error));
+        background: rgb(var(--v-theme-error));
+        color: #fff;
+        font-weight: 600;
+
+        &:hover {
+            background: #b91c1c;
+        }
+    }
+}
+
+.ui-modal__footer {
+    gap: 10px;
+    flex-wrap: wrap;
+}

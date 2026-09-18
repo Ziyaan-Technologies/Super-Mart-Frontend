@@ -1,0 +1,44 @@
+@import './variables';
+@import 'vuetify/styles.scss';
+@import './override';
+@import './layout/text';
+@import './layout/reboot';
+@import './layout/container';
+@import './layout/sidebar';
+@import './layout/topbar';
+@import './layout/dark';
+
+@import './components/VDatatable';
+@import './components/VAlert';
+@import './components/VButtons';
+@import './components/VCard';
+@import './components/VCarousel';
+@import './components/VField';
+@import './components/VList';
+@import './components/VInput';
+@import './components/VNavigationDrawer';
+@import './components/VShadow';
+@import './components/VSwitch';
+@import './components/VSelectionControl';
+@import './components/VTextField';
+@import './components/VTextarea';
+@import './components/VTabs';
+@import './components/VTable';
+@import './components/VExpansionpanel';
+@import './components/VModal';
+@import './components/VImagePicker';
+@import './components/VKpiBox';
+@import './components/VStatusChip';
+@import './components/VDropdown';
+@import './components/VPagination';
+@import './components/VActionMenu';
+@import './components/VPageHeader';
+@import './components/VSuperMart';
+
+@import './pages/dashboards';
+@import './pages/authentication';
+@import './pages/apps';
+
+@import './layout/desktop';
+
+@import 'vue3-perfect-scrollbar/style.css';

@@ -1,0 +1,35 @@
+// Colored status badges used in tables (Orders, Vendors, Recent Activities, …).
+
+.ui-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.ui-status-chip--green {
+  background: linear-gradient(180deg, #22a019 0%, #21a318 100%);
+}
+
+.ui-status-chip--purple {
+  background: linear-gradient(180deg, #1976d2 0%, #1565c0 100%);
+}
+
+.ui-status-chip--orange {
+  background: linear-gradient(180deg, #ff8a0b 0%, #ff7517 100%);
+}
+
+.ui-status-chip--red {
+  background: linear-gradient(180deg, #ff3a24 0%, #ff2912 100%);
+}
+
+.ui-status-chip--gray {
+  background: #9ca3af;
+}
