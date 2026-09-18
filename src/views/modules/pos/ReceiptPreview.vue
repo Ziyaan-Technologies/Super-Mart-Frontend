@@ -59,7 +59,7 @@ function amount(value?: number | string | null) {
     <div class="receipt-row receipt-total"><span>NET TOTAL</span><span>{{ currency }} {{ amount(sale.total_amount) }}</span></div>
     <div class="receipt-line" />
     <div v-for="payment in sale.payments" :key="payment.id" class="receipt-row">
-      <span>{{ payment.method === 'Cash' ? 'Cash Received' : `Paid by ${payment.method}` }}<template v-if="payment.reference"> ({{ payment.reference }})</template></span>
+      <span>{{ payment.method === 'Cash' ? 'Cash Received' : `Paid by ${payment.method}` }}<template v-if="payment.bank_name"> · {{ payment.bank_name }}</template><template v-if="payment.reference"> ({{ payment.reference }})</template></span>
       <span>{{ amount(payment.amount) }}</span>
     </div>
     <div class="receipt-row font-weight-bold"><span>Cash Back</span><span>{{ amount(sale.change_amount) }}</span></div>

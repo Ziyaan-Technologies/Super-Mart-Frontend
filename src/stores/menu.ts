@@ -30,6 +30,7 @@ export const useMenuStore = defineStore('menu', () => {
           items: [
             { title: 'Summary', icon: 'mdi-view-dashboard-outline', to: '/dashboard/analytical', action: 'home_view', subject: 'Home' },
             { title: 'Branches', icon: 'mdi-store-outline', to: '/store', action: 'store_view', subject: 'Store' },
+            { title: 'Banks', icon: 'mdi-bank-outline', to: '/banks', action: 'banks_view', subject: 'Bank' },
           ],
         },
       ];
@@ -80,6 +81,7 @@ export const useMenuStore = defineStore('menu', () => {
         items: [
           { title: 'Users', icon: 'mdi-account-key-outline', to: '/users', action: 'supervisor_view', subject: 'Supervisor' },
           { title: 'Branches', icon: 'mdi-store-outline', to: '/store', action: 'store_view', subject: 'Store' },
+          { title: 'Banks', icon: 'mdi-bank-outline', to: '/banks', action: 'banks_view', subject: 'Bank' },
           { title: 'Business', icon: 'mdi-cog-outline', to: '/business-settings', action: 'store_edit', subject: 'Store' },
         ],
       },

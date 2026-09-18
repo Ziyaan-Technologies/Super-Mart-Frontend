@@ -117,6 +117,7 @@ watch(() => props.modelValue, (open) => {
       <template v-if="!isClosed && !readonly">
         <v-label class="text-subtitle-1 pb-2 text-lightText mt-4">Cash counted in drawer</v-label>
         <v-text-field v-model="closingCash" type="number" min="0" hide-details autofocus />
+        <p class="text-caption text-lightText mt-1 mb-0">This cash stays in the drawer and becomes the opening cash of the next counter.</p>
         <p v-if="difference !== null" class="mt-2 font-weight-semibold" :class="difference < 0 ? 'text-error' : difference > 0 ? 'text-orange' : 'text-successdark'">
           {{ difference === 0 ? 'Drawer is balanced' : difference < 0 ? `Short by ${formatMoney(-difference)}` : `Over by ${formatMoney(difference)}` }}
         </p>

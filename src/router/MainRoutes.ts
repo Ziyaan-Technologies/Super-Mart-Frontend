@@ -345,6 +345,16 @@ const MainRoutes = {
             }
         },
         {
+            name: 'Banks',
+            path: '/banks',
+            component: () => import('@/views/modules/bank/Bank.vue'),
+            meta: {
+                requiresAuth: true,
+                action: ['banks_view'],
+                subject: 'Bank'
+            }
+        },
+        {
             name: 'Suppliers',
             path: '/suppliers',
             component: () => import('@/views/modules/supplier/Supplier.vue'),

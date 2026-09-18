@@ -6,22 +6,17 @@ import DeleteDialog from '@/components/shared/DeleteDialog.vue';
 import StatusChip from '@/components/shared/StatusChip.vue';
 import ReceiptButtons from '@/components/shared/ReceiptButtons.vue';
 import RegisterDialog from '@/views/modules/pos/RegisterDialog.vue';
-import ReturnDialog from '@/views/modules/pos/ReturnDialog.vue';
+import ReturnBill from '@/views/modules/pos/ReturnBill.vue';
+import PaymentDialog, { type PaymentLine } from '@/views/modules/pos/PaymentDialog.vue';
 import ReceiptPreview from '@/views/modules/pos/ReceiptPreview.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useAlerts } from '@/composables/useAlerts';
-import { formatDate, formatDateTime, formatMoney, formatNumber, today } from '@/utils/api';
+import { apiError, formatDate, formatDateTime, formatMoney, formatNumber, today } from '@/utils/api';
 import { can } from '@/utils/permissions';
 import type { CartLine } from '@/models/type-interfaces';
 
 const authStore = useAuthStore();
 const alerts = useAlerts();
-
-const paymentMethods = [
-  { value: 'Cash', icon: 'mdi-cash-multiple', hint: 'Alt+1' },
-  { value: 'Card', icon: 'mdi-credit-card-outline', hint: 'Alt+2' },
-  { value: 'Online', icon: 'mdi-cellphone-nfc', hint: 'Alt+3' },
-];
 
 const tabs = [
   { value: 'detail', title: 'Detail', icon: 'mdi-cart-outline' },
@@ -34,8 +29,13 @@ const tab = ref('detail');
 const registerLoading = ref(true);
 const session = ref<any>(null);
 const openElsewhere = ref<string | null>(null);
-const openingCash = ref<number | string>(0);
+const drawerCash = ref(0);
+const counterClosed = ref(false);
 const openingRegister = ref(false);
+const openingCashDialog = ref(false);
+const openingCashInput = ref<number | string>('');
+const savingOpeningCash = ref(false);
+const openingCashError = ref('');
 
 const barcode = ref('');
 const barcodeInput = ref<any>(null);
@@ -44,19 +44,12 @@ const tableWrap = ref<HTMLElement | null>(null);
 const selectedIndex = ref(-1);
 
 const cart = ref<CartLine[]>([]);
-const customerPhone = ref('');
-const customerName = ref('');
-const customer = ref<any>(null);
-const customerInput = ref<any>(null);
-const customerLookupLoading = ref(false);
 const note = ref('');
 const billDiscountPercent = ref<number | string>('');
 const billFlatDiscount = ref<number | string>('');
 
-const paymentMethod = ref('Cash');
-const cashReceived = ref<number | string>('');
-const paymentReference = ref('');
-const paymentInput = ref<any>(null);
+const paymentDialog = ref(false);
+const paymentError = ref('');
 const autoPrint = ref(localStorage.getItem('posAutoPrint') !== '0');
 const placing = ref(false);
 
@@ -82,7 +75,6 @@ const deleteDialog = ref(false);
 const deleteIndex = ref(-1);
 const voidDialog = ref(false);
 const registerDialog = ref(false);
-const returnDialog = ref(false);
 const returnSaleId = ref<number | null>(null);
 const heldDialog = ref(false);
 const heldBills = ref<any[]>([]);
@@ -105,7 +97,7 @@ const canReturn = computed(() => can('pos_return', 'POS'));
 const heldKey = computed(() => `posHeld:${authStore.clientstoreId}`);
 const counterName = computed(() => (authStore.client?.full_name || '').toUpperCase());
 const dialogOpen = computed(() => findDialog.value || weightDialog.value || deleteDialog.value || voidDialog.value
-  || heldDialog.value || registerDialog.value || returnDialog.value);
+  || heldDialog.value || registerDialog.value || paymentDialog.value || openingCashDialog.value);
 
 const round = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 const roundQuantity = (value: number) => Math.round((Number(value) || 0) * 1000) / 1000;
@@ -162,37 +154,22 @@ const totals = computed(() => {
   };
 });
 
-const isCash = computed(() => paymentMethod.value === 'Cash');
-const cashValue = computed(() => (cashReceived.value === '' ? totals.value.total : Number(cashReceived.value) || 0));
-const change = computed(() => (isCash.value ? round(Math.max(cashValue.value - totals.value.total, 0)) : 0));
-const due = computed(() => (isCash.value ? round(Math.max(totals.value.total - cashValue.value, 0)) : 0));
-const quickCash = computed(() => {
-  const total = totals.value.total;
-  const options = new Set<number>([Math.ceil(total)]);
-  [100, 500, 1000, 5000].forEach((step) => options.add(Math.ceil(total / step) * step));
-  return Array.from(options).filter((value) => value > 0).sort((a, b) => a - b).slice(0, 4);
-});
-
 const functionKeys = computed(() => [
   { key: 'F2', label: 'Barcode', icon: 'mdi-barcode-scan', action: focusScanner, show: true, disabled: false, tone: '' },
   { key: 'F3', label: 'Find Item', icon: 'mdi-magnify', action: () => openFind(), show: true, disabled: false, tone: '' },
-  { key: 'F4', label: 'Party', icon: 'mdi-account-search-outline', action: focusCustomer, show: true, disabled: false, tone: '' },
   { key: 'Del', label: 'Remove Line', icon: 'mdi-minus-box-outline', action: () => askRemove(selectedIndex.value), show: true, disabled: selectedIndex.value < 0, tone: '' },
   { key: 'F6', label: 'Hold', icon: 'mdi-pause-circle-outline', action: holdBill, show: true, disabled: !cart.value.length, tone: '' },
   { key: 'F7', label: 'Un Hold', icon: 'mdi-play-circle-outline', action: openHeld, show: true, disabled: false, tone: '' },
-  { key: 'F8', label: 'Return', icon: 'mdi-keyboard-return', action: () => openReturn(null), show: canReturn.value, disabled: false, tone: '' },
+  { key: 'F8', label: 'Return', icon: 'mdi-keyboard-return', action: goToReturns, show: canReturn.value, disabled: false, tone: '' },
   { key: 'F9', label: 'Save', icon: 'mdi-content-save-outline', action: startPayment, show: true, disabled: !cart.value.length, tone: '' },
   { key: 'F10', label: 'Print Last', icon: 'mdi-printer-outline', action: printLast, show: true, disabled: !lastSale.value, tone: '' },
   { key: '', label: 'Clear Bill', icon: 'mdi-delete-sweep-outline', action: () => (voidDialog.value = true), show: true, disabled: !cart.value.length, tone: 'desk-fn--red' },
+  { key: '', label: 'Opening Cash', icon: 'mdi-cash-lock', action: openOpeningCash, show: authStore.isOwner, disabled: false, tone: 'desk-fn--grey' },
   { key: '', label: 'Close Counter', icon: 'mdi-lock-outline', action: () => (registerDialog.value = true), show: true, disabled: false, tone: 'desk-fn--grey' },
 ].filter((item) => item.show));
 
 function focusScanner() {
   nextTick(() => barcodeInput.value?.focus());
-}
-
-function focusCustomer() {
-  nextTick(() => customerInput.value?.focus());
 }
 
 function scrollToSelected() {
@@ -209,9 +186,13 @@ async function loadRegister() {
     const response = await axios.get('pos/registers/current', { params: { clientstore_id: authStore.clientstoreId } });
     session.value = response.data.session;
     openElsewhere.value = response.data.open_elsewhere || null;
+    drawerCash.value = Number(response.data.drawer_cash) || 0;
     if (session.value) {
       focusScanner();
       loadLastSale();
+    } else if (!openElsewhere.value && !counterClosed.value) {
+      // The counter opens by itself with the cash carried in the drawer; only the owner changes that amount.
+      await openRegister(true);
     }
   } catch (error) {
     alerts.fail(error);
@@ -229,17 +210,46 @@ async function loadLastSale() {
   }
 }
 
-async function openRegister() {
+async function openRegister(automatic = false) {
   openingRegister.value = true;
   try {
-    session.value = (await axios.post('pos/registers/open', { clientstore_id: authStore.clientstoreId, opening_cash: Number(openingCash.value) || 0 })).data;
+    session.value = (await axios.post('pos/registers/open', { clientstore_id: authStore.clientstoreId })).data;
+    counterClosed.value = false;
     lastSale.value = null;
-    alerts.success(`Counter ${session.value.session_number} opened`);
+    alerts.success(`Counter ${session.value.session_number} ${automatic ? 'started' : 'opened'} with ${formatMoney(session.value.opening_cash)} opening cash`);
     focusScanner();
   } catch (error) {
     alerts.fail(error);
   } finally {
     openingRegister.value = false;
+  }
+}
+
+function openOpeningCash() {
+  openingCashInput.value = session.value ? session.value.opening_cash : drawerCash.value;
+  openingCashError.value = '';
+  openingCashDialog.value = true;
+}
+
+async function saveOpeningCash() {
+  if (openingCashInput.value === '' || Number(openingCashInput.value) < 0) {
+    openingCashError.value = 'Enter the cash placed in the drawer';
+    return;
+  }
+  savingOpeningCash.value = true;
+  try {
+    const result = (await axios.post('pos/registers/opening-cash', { clientstore_id: authStore.clientstoreId, opening_cash: Number(openingCashInput.value) })).data;
+    drawerCash.value = Number(result.drawer_cash) || 0;
+    if (session.value) {
+      session.value = (await axios.get(`pos/registers/${session.value.id}`)).data;
+    }
+    openingCashDialog.value = false;
+    alerts.success(`Opening cash for ${authStore.storeName} set to ${formatMoney(drawerCash.value)}`);
+    if (session.value) focusScanner();
+  } catch (error) {
+    openingCashError.value = apiError(error);
+  } finally {
+    savingOpeningCash.value = false;
   }
 }
 
@@ -270,7 +280,6 @@ function addToCart(variant: any, quantity: number) {
     });
     selectedIndex.value = cart.value.length - 1;
   }
-  cashReceived.value = '';
   scrollToSelected();
 }
 
@@ -449,86 +458,28 @@ watch(findDialog, (open) => {
   if (!open && !weightDialog.value) focusScanner();
 });
 
-async function lookupCustomer() {
-  const phone = customerPhone.value.trim();
-  customer.value = null;
-  if (phone.length < 3) return;
-  customerLookupLoading.value = true;
-  try {
-    const results = (await axios.get('pos/customers', { params: { q: phone } })).data;
-    const match = results.find((row: any) => row.phone === phone) || (results.length === 1 ? results[0] : null);
-    if (match) {
-      customer.value = match;
-      customerPhone.value = match.phone;
-      customerName.value = match.full_name;
-    }
-  } catch (error) {
-    alerts.fail(error);
-  } finally {
-    customerLookupLoading.value = false;
-  }
-}
-
-function clearCustomer() {
-  customer.value = null;
-  customerPhone.value = '';
-  customerName.value = '';
-}
-
-function selectPayment(method: string) {
-  paymentMethod.value = method;
-  cashReceived.value = '';
-  paymentReference.value = '';
-  if (cart.value.length) focusPayment();
-}
-
-function focusPayment() {
-  nextTick(() => {
-    const element = paymentInput.value?.$el?.querySelector('input');
-    element?.focus();
-    element?.select();
-  });
-}
-
 function startPayment() {
   if (!cart.value.length) return;
-  const element = paymentInput.value?.$el?.querySelector('input');
-  if (element && document.activeElement === element) {
-    placeOrder();
-    return;
-  }
-  focusPayment();
+  cart.value.forEach((line) => normalizeQuantity(line));
+  paymentError.value = '';
+  paymentDialog.value = true;
 }
 
 function resetSale() {
   cart.value = [];
   selectedIndex.value = -1;
-  clearCustomer();
   note.value = '';
   billDiscountPercent.value = '';
   billFlatDiscount.value = '';
-  paymentMethod.value = 'Cash';
-  cashReceived.value = '';
-  paymentReference.value = '';
 }
 
-async function placeOrder() {
+async function placeOrder(payments: PaymentLine[]) {
   if (!cart.value.length || placing.value) return;
-  cart.value.forEach((line) => normalizeQuantity(line));
-  const total = totals.value.total;
-  const amount = isCash.value ? cashValue.value : total;
-  if (amount < total) {
-    alerts.fail(null, `Cash is short by ${formatMoney(total - amount)}`);
-    focusPayment();
-    return;
-  }
   placing.value = true;
+  paymentError.value = '';
   try {
     const response = await axios.post('pos/sales', {
       clientstore_id: authStore.clientstoreId,
-      user_id: customer.value?.id || undefined,
-      customer_phone: customer.value ? undefined : customerPhone.value.trim() || undefined,
-      customer_name: customer.value ? undefined : customerName.value.trim() || undefined,
       bill_discount: totals.value.billDiscount,
       note: note.value.trim() || undefined,
       items: cart.value.map((line) => ({
@@ -536,12 +487,14 @@ async function placeOrder() {
         quantity: Number(line.quantity),
         discount_amount: lineDiscount(line),
       })),
-      payments: [{
-        method: paymentMethod.value,
-        amount: round(amount),
-        reference: isCash.value ? undefined : paymentReference.value.trim() || undefined,
-      }],
+      payments: payments.map((payment) => ({
+        method: payment.method,
+        amount: round(payment.amount),
+        reference: payment.reference,
+        bank_id: payment.bank_id,
+      })),
     });
+    paymentDialog.value = false;
     lastSale.value = response.data;
     reportSale.value = response.data;
     reportBillNumber.value = response.data.bill_number;
@@ -553,21 +506,29 @@ async function placeOrder() {
     }
     if (bills.value.length) loadBills();
   } catch (error) {
-    alerts.fail(error);
+    paymentError.value = apiError(error);
   } finally {
     placing.value = false;
-    focusScanner();
+    if (!paymentDialog.value) focusScanner();
   }
 }
+
+watch(paymentDialog, (open) => {
+  if (!open) focusScanner();
+});
 
 function printLast() {
   receiptButtons.value?.printReceipt();
 }
 
-function openReturn(saleId: number | null) {
+function goToReturns() {
+  tab.value = 'list';
+}
+
+function openReturn(saleId: number) {
   if (!canReturn.value) return;
   returnSaleId.value = saleId;
-  returnDialog.value = true;
+  tab.value = 'detail';
 }
 
 function holdBill() {
@@ -576,8 +537,6 @@ function holdBill() {
   held.unshift({
     id: Date.now(),
     at: new Date().toISOString(),
-    customerName: customerName.value,
-    customerPhone: customerPhone.value,
     cart: cart.value,
     billDiscountPercent: billDiscountPercent.value,
     billFlatDiscount: billFlatDiscount.value,
@@ -603,8 +562,6 @@ function resumeHeld(bill: any) {
     flat_discount: line.flat_discount ?? line.discount_amount ?? '',
   }));
   selectedIndex.value = cart.value.length - 1;
-  customerName.value = bill.customerName || '';
-  customerPhone.value = bill.customerPhone || '';
   billDiscountPercent.value = bill.billDiscountPercent ?? '';
   billFlatDiscount.value = bill.billFlatDiscount ?? bill.billDiscount ?? '';
   note.value = bill.note || '';
@@ -620,19 +577,30 @@ function discardHeld(bill: any) {
 
 function onRegisterClosed(closed: any) {
   session.value = null;
+  counterClosed.value = true;
+  drawerCash.value = Number(closed.closing_cash) || 0;
   lastSale.value = null;
   reportSale.value = null;
   bills.value = [];
+  returnSaleId.value = null;
   resetSale();
   const difference = Number(closed.cash_difference) || 0;
   const result = difference === 0 ? 'Drawer is balanced.' : difference < 0 ? `Drawer is short by ${formatMoney(-difference)}.` : `Drawer is over by ${formatMoney(difference)}.`;
   alerts.success(`Counter ${closed.session_number} closed. Expected ${formatMoney(closed.expected_cash)}, counted ${formatMoney(closed.closing_cash)}. ${result}`, 15000);
 }
 
-function onReturned() {
-  alerts.success('Return processed and refund recorded');
+function onReturned(result: any) {
+  returnSaleId.value = null;
+  alerts.success(`Return ${result.return.return_number} saved. Give back ${formatMoney(result.return.refund_amount)} by ${result.refund_method}. Items are back in stock.`, 15000);
   if (bills.value.length) loadBills();
-  if (reportSale.value) showReport(reportSale.value.id);
+  if (reportSale.value?.id === result.sale.id) reportSale.value = result.sale;
+  if (lastSale.value?.id === result.sale.id) lastSale.value = result.sale;
+  focusScanner();
+}
+
+function onReturnCancelled() {
+  returnSaleId.value = null;
+  focusScanner();
 }
 
 async function loadBills() {
@@ -650,7 +618,17 @@ async function loadBills() {
       ...range,
     });
     bills.value = response.data.data;
-    if (selectedBill.value) {
+    const search = billsSearch.value.trim();
+    if (!bills.value.length && search) {
+      try {
+        bills.value = [(await axios.get(`pos/sales/lookup/${encodeURIComponent(search)}`)).data];
+      } catch (error) {
+        bills.value = [];
+      }
+    }
+    if (search && bills.value.length === 1) {
+      selectedBill.value = bills.value[0];
+    } else if (selectedBill.value) {
       selectedBill.value = bills.value.find((bill) => bill.id === selectedBill.value.id) || null;
     }
   } catch (error) {
@@ -661,7 +639,7 @@ async function loadBills() {
 }
 
 function paidBy(bill: any) {
-  return (bill.payments || []).map((payment: any) => payment.method).join(' + ') || '-';
+  return (bill.payments || []).map((payment: any) => (payment.bank_name ? `${payment.method} (${payment.bank_name})` : payment.method)).join(' + ') || '-';
 }
 
 async function showReport(id: number) {
@@ -697,19 +675,13 @@ watch(tab, (value) => {
 });
 
 function onKeydown(event: KeyboardEvent) {
-  if (!session.value || dialogOpen.value || tab.value !== 'detail') return;
-  if (event.altKey && ['Digit1', 'Digit2', 'Digit3'].includes(event.code)) {
-    event.preventDefault();
-    selectPayment(paymentMethods[Number(event.code.slice(-1)) - 1].value);
-    return;
-  }
+  if (!session.value || dialogOpen.value || tab.value !== 'detail' || returnSaleId.value) return;
   const actions: Record<string, () => void> = {
     F2: focusScanner,
     F3: () => openFind(),
-    F4: focusCustomer,
     F6: holdBill,
     F7: openHeld,
-    F8: () => openReturn(null),
+    F8: goToReturns,
     F9: startPayment,
     F10: printLast,
   };
@@ -724,10 +696,12 @@ watch(autoPrint, (value) => localStorage.setItem('posAutoPrint', value ? '1' : '
 
 watch(() => authStore.clientstoreId, () => {
   resetSale();
+  returnSaleId.value = null;
   lastSale.value = null;
   reportSale.value = null;
   bills.value = [];
   tab.value = 'detail';
+  counterClosed.value = false;
   loadRegister();
 });
 
@@ -748,6 +722,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </span>
       <template v-if="session">
         <span class="pos-caption-chip pos-caption-chip--open"><v-icon size="14">mdi-circle</v-icon>Counter {{ session.session_number }}</span>
+        <span class="pos-caption-chip"><v-icon size="14">mdi-cash</v-icon>Opening {{ formatMoney(session.opening_cash) }}</span>
         <span class="pos-caption-chip"><v-icon size="14">mdi-calendar</v-icon>{{ formatDate(new Date()) }}</span>
       </template>
     </div>
@@ -776,13 +751,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             You already have a counter open at <strong>{{ openElsewhere }}</strong>. Switch to that branch or close it there first.
           </p>
           <template v-else>
-            <label class="desk-field-label mt-4">Opening Cash in Drawer ({{ authStore.currencyCode }})</label>
-            <v-text-field v-model="openingCash" type="number" min="0" hide-details autofocus class="big-input" @keyup.enter="openRegister" />
-            <p class="text-caption text-lightText mt-1 mb-0">Count the cash in the drawer before you start billing.</p>
+            <div class="open-counter__info mt-4">
+              <span class="desk-label">Opening Cash</span><span class="desk-value text-left">{{ formatMoney(drawerCash) }}</span>
+            </div>
+            <p class="text-caption text-lightText mt-1 mb-0">
+              {{ counterClosed ? 'Counter closed. The cash counted at closing stays in the drawer for the next counter.' : 'Cash carried in the drawer from the last counter.' }}
+              <template v-if="!authStore.isOwner">Only the owner can change it.</template>
+            </p>
           </template>
         </div>
         <div v-if="!openElsewhere" class="desk-dialog__footer">
-          <button class="desk-btn desk-btn--success" :disabled="openingRegister" @click="openRegister">
+          <button v-if="authStore.isOwner" class="desk-btn" @click="openOpeningCash">
+            <v-icon size="16">mdi-cash-lock</v-icon>Set Opening Cash
+          </button>
+          <button class="desk-btn desk-btn--success" :disabled="openingRegister" @click="openRegister()">
             <v-progress-circular v-if="openingRegister" indeterminate size="14" width="2" color="white" />
             <v-icon v-else size="16">mdi-lock-open-variant</v-icon>Open Counter
           </button>
@@ -797,7 +779,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </button>
       </div>
 
-      <div v-show="tab === 'detail'" class="pos-detail">
+      <ReturnBill v-if="returnSaleId" v-show="tab === 'detail'" :sale-id="returnSaleId" :active="tab === 'detail'"
+        @saved="onReturned" @cancel="onReturnCancelled" />
+
+      <div v-show="tab === 'detail' && !returnSaleId" class="pos-detail">
         <div class="pos-left">
           <div class="desk-group">
             <span class="desk-group__legend">Header Info</span>
@@ -809,21 +794,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
               <div style="width: 120px">
                 <label class="desk-field-label">Date</label>
                 <div class="desk-value field-box">{{ formatDate(new Date()) }}</div>
-              </div>
-              <div style="width: 150px">
-                <label class="desk-field-label">Party Phone (F4)</label>
-                <v-text-field ref="customerInput" v-model="customerPhone" hide-details placeholder="03XXXXXXXXX" :loading="customerLookupLoading"
-                  :readonly="!!customer" @blur="lookupCustomer" @keydown.enter.prevent="lookupCustomer(); focusScanner()" />
-              </div>
-              <div class="flex-grow-1" style="min-width: 200px">
-                <label class="desk-field-label">Party Name</label>
-                <v-text-field v-model="customerName" hide-details placeholder="CASH SALE - WALK-IN CUSTOMER" :readonly="!!customer"
-                  @keydown.enter.prevent="focusScanner">
-                  <template v-if="customer" #append-inner>
-                    <span class="text-caption text-primary font-weight-bold mr-1">{{ customer.loyalty_points || 0 }} pts</span>
-                    <v-icon size="16" class="cursor-pointer" @click="clearCustomer">mdi-close</v-icon>
-                  </template>
-                </v-text-field>
               </div>
               <div class="flex-grow-1" style="min-width: 160px">
                 <label class="desk-field-label">Remarks</label>
@@ -920,62 +890,35 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           <span class="desk-group__legend">Total</span>
           <div class="total-panel__scroll">
             <div class="total-row"><span class="desk-label">Gross Sale</span><div class="desk-value">{{ formatNumber(totals.gross, 2) }}</div></div>
-            <div class="total-row"><span class="desk-label">Item Disc</span><div class="desk-value">{{ formatNumber(totals.itemDiscount, 2) }}</div></div>
-            <template v-if="canDiscount">
-              <div class="total-row">
-                <span class="desk-label">Disc %</span>
-                <v-text-field v-model="billDiscountPercent" type="number" min="0" max="100" hide-details class="total-input"
-                  :disabled="!cart.length" placeholder="0" />
-              </div>
-              <div class="total-row">
-                <span class="desk-label">Flat Disc</span>
-                <v-text-field v-model="billFlatDiscount" type="number" min="0" hide-details class="total-input"
-                  :disabled="!cart.length" placeholder="0" />
-              </div>
-            </template>
+            <div class="total-row">
+              <span class="desk-label">Disc %</span>
+              <v-text-field v-if="canDiscount" v-model="billDiscountPercent" type="number" min="0" max="100" hide-details class="total-input"
+                :disabled="!cart.length" placeholder="0" />
+              <div v-else class="desk-value">{{ formatNumber(billDiscountPercent || 0, 2) }}</div>
+            </div>
+            <div class="total-row">
+              <span class="desk-label">Flat Disc</span>
+              <v-text-field v-if="canDiscount" v-model="billFlatDiscount" type="number" min="0" hide-details class="total-input"
+                :disabled="!cart.length" placeholder="0" />
+              <div v-else class="desk-value">{{ formatNumber(billFlatDiscount || 0, 2) }}</div>
+            </div>
             <div class="total-row"><span class="desk-label">Total Disc</span><div class="desk-value">{{ formatNumber(totals.totalDiscount, 2) }}</div></div>
             <div class="total-row"><span class="desk-label">{{ totals.inclusive ? 'G.S.T (incl.)' : 'G.S.T' }}</span><div class="desk-value">{{ formatNumber(totals.tax, 2) }}</div></div>
+            <div class="total-row total-row--grand"><span class="desk-label">Grand Total</span><div class="desk-value">{{ formatNumber(totals.total, 2) }}</div></div>
 
             <div class="net-value">
               <span class="desk-label">Net Value</span>
               <div class="net-value__amount">{{ formatMoney(totals.total) }}</div>
             </div>
 
-            <span class="desk-label d-block mt-2 mb-1">Payment Type</span>
-            <div class="pay-types">
-              <button v-for="method in paymentMethods" :key="method.value" type="button" class="pay-type"
-                :class="{ 'pay-type--active': paymentMethod === method.value }" :title="method.hint" @click="selectPayment(method.value)">
-                <v-icon size="22">{{ method.icon }}</v-icon>
-                <span>{{ method.value }}</span>
-              </button>
-            </div>
-
-            <template v-if="isCash">
-              <label class="desk-field-label mt-2">Cash Received (F9)</label>
-              <v-text-field ref="paymentInput" v-model="cashReceived" type="number" min="0" hide-details class="big-input"
-                :prefix="authStore.currencyCode || ''" :placeholder="String(totals.total)" @keydown.enter.prevent="placeOrder" />
-              <div v-if="cart.length" class="d-flex flex-wrap ga-1 mt-1">
-                <button v-for="value in quickCash" :key="value" type="button" class="desk-btn desk-btn--small" @click="cashReceived = value">
-                  {{ formatNumber(value, 0) }}
-                </button>
-              </div>
-            </template>
-            <template v-else>
-              <label class="desk-field-label mt-2">{{ paymentMethod }} Reference / Txn ID (F9)</label>
-              <v-text-field ref="paymentInput" v-model="paymentReference" hide-details class="big-input" placeholder="Optional"
-                @keydown.enter.prevent="placeOrder" />
-              <p class="text-caption text-lightText mt-1 mb-0">Charge {{ formatMoney(totals.total) }} on the {{ paymentMethod === 'Card' ? 'card machine' : 'online account' }}.</p>
-            </template>
-
             <div class="total-row mt-2">
-              <span class="desk-label">{{ due > 0 ? 'Still Due' : 'Cash Back' }}</span>
-              <div class="cash-back" :class="{ 'cash-back--due': due > 0 }">{{ formatMoney(due > 0 ? due : change) }}</div>
+              <span class="desk-label">Cash Back</span>
+              <div class="cash-back">{{ formatMoney(justPaid && lastSale ? lastSale.change_amount : 0) }}</div>
             </div>
 
             <v-checkbox v-model="autoPrint" label="Print receipt after saving" hide-details density="compact" color="primary" />
-            <button type="button" class="desk-btn desk-btn--success save-btn" :disabled="!cart.length || due > 0 || placing" @click="placeOrder">
-              <v-progress-circular v-if="placing" indeterminate size="16" width="2" color="white" />
-              <v-icon v-else size="20">mdi-content-save-check-outline</v-icon>Save &amp; Print (F9)
+            <button type="button" class="desk-btn desk-btn--success save-btn" :disabled="!cart.length || placing" @click="startPayment">
+              <v-icon size="20">mdi-content-save-check-outline</v-icon>Save &amp; Print (F9)
             </button>
 
             <div v-if="lastSale" class="last-bill" :class="{ 'last-bill--new': justPaid }">
@@ -1034,7 +977,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 <span class="text-caption">to</span>
                 <v-text-field v-model="billsTo" type="date" hide-details style="max-width: 150px" />
               </template>
-              <v-text-field v-model="billsSearch" prepend-inner-icon="mdi-magnify" placeholder="Bill no, party name or phone" hide-details
+              <v-text-field v-model="billsSearch" prepend-inner-icon="mdi-magnify" placeholder="Bill number" hide-details
                 style="min-width: 220px" @keydown.enter.prevent="loadBills" />
               <button type="button" class="desk-btn desk-btn--primary" @click="loadBills"><v-icon size="16">mdi-filter-outline</v-icon>Filter</button>
             </div>
@@ -1047,9 +990,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           </button>
           <ReceiptButtons v-if="selectedBill" :sale-id="selectedBill.id" :bill-number="selectedBill.bill_number" variant="button"
             @error="(error: any) => alerts.fail(error)" />
-          <button v-if="canReturn" type="button" class="desk-btn" :disabled="!selectedBill || selectedBill.status === 'Returned'"
+          <button v-if="canReturn" type="button" class="desk-btn desk-btn--danger" :disabled="!selectedBill || selectedBill.status === 'Returned'"
             @click="openReturn(selectedBill.id)">
-            <v-icon size="16">mdi-keyboard-return</v-icon>Return
+            <v-icon size="16">mdi-keyboard-return</v-icon>Return Items
           </button>
           <span class="ml-auto text-caption">
             Bills: <strong>{{ bills.length }}</strong> · Total:
@@ -1184,12 +1127,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     <div class="desk-grid-wrap">
       <v-table>
         <thead>
-          <tr><th>Time</th><th>Party</th><th class="text-right">Lines</th><th class="text-right">Total</th><th></th></tr>
+          <tr><th>Time</th><th class="text-right">Lines</th><th class="text-right">Total</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="bill in heldBills" :key="bill.id">
             <td>{{ new Date(bill.at).toLocaleTimeString() }}</td>
-            <td class="text-uppercase">{{ bill.customerName || 'Walk-in customer' }}</td>
             <td class="text-right">{{ bill.cart.length }}</td>
             <td class="text-right font-weight-bold">{{ formatNumber(bill.total, 2) }}</td>
             <td class="text-right">
@@ -1198,15 +1140,31 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             </td>
           </tr>
           <tr v-if="!heldBills.length">
-            <td colspan="5" class="text-center text-lightText py-6">No held bills</td>
+            <td colspan="4" class="text-center text-lightText py-6">No held bills</td>
           </tr>
         </tbody>
       </v-table>
     </div>
   </DeskDialog>
 
+  <PaymentDialog v-model="paymentDialog" :total="totals.total" :saving="placing" :error="paymentError" @finish="placeOrder" />
   <RegisterDialog v-if="session" v-model="registerDialog" :session-id="session.id" @closed="onRegisterClosed" />
-  <ReturnDialog v-model="returnDialog" :sale-id="returnSaleId" @returned="onReturned" />
+
+  <DeskDialog v-model="openingCashDialog" title="Opening Cash" icon="mdi-cash-lock" :subtitle="authStore.storeName || ''" max-width="420">
+    <v-alert v-if="openingCashError" :text="openingCashError" type="error" density="compact" class="mb-3 single-line-alert" />
+    <label class="desk-field-label">Cash in Drawer ({{ authStore.currencyCode }})</label>
+    <v-text-field v-model="openingCashInput" type="number" min="0" autofocus hide-details class="big-input" @keyup.enter="saveOpeningCash" />
+    <p class="text-caption text-lightText mt-2 mb-0">
+      Every counter at this branch opens with this amount until a counter is closed or you change it again.
+      <template v-if="session">The open counter {{ session.session_number }} will use it as its opening cash.</template>
+    </p>
+    <template #footer>
+      <button type="button" class="desk-btn desk-btn--primary" :disabled="savingOpeningCash" @click="saveOpeningCash">
+        <v-progress-circular v-if="savingOpeningCash" indeterminate size="14" width="2" color="white" />Save
+      </button>
+      <button type="button" class="desk-btn" @click="openingCashDialog = false">Cancel</button>
+    </template>
+  </DeskDialog>
 </template>
 
 <style scoped>
@@ -1243,7 +1201,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
 .open-counter__info {
   display: grid;
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 110px 1fr;
   gap: 6px;
   align-items: center;
 }
@@ -1453,42 +1411,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   font-variant-numeric: tabular-nums;
 }
 
-.pay-types {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-.pay-type {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 2px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1f2630;
-  border: 1px solid #8795a8;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #fdfdfe 0%, #e3e8ef 100%);
-  cursor: pointer;
-}
-
-.pay-type .v-icon {
-  color: #1565c0;
-}
-
-.pay-type--active {
-  color: #fff;
-  border-color: #0d4a94;
-  background: linear-gradient(180deg, #2a7bd6 0%, #1256a8 100%);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.pay-type--active .v-icon {
-  color: #fff;
-}
-
 .cash-back {
   padding: 2px 8px;
   text-align: right;
@@ -1499,8 +1421,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   border: 1px solid #9faab8;
 }
 
-.cash-back--due {
-  color: #c62828;
+.total-row--grand .desk-value {
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .save-btn {
