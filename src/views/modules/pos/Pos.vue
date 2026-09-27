@@ -29,13 +29,20 @@ const tab = ref('detail');
 const registerLoading = ref(true);
 const session = ref<any>(null);
 const openElsewhere = ref<string | null>(null);
-const drawerCash = ref(0);
-const counterClosed = ref(false);
+const counters = ref<any[]>([]);
 const openingRegister = ref(false);
-const openingCashDialog = ref(false);
+const openCounterDialog = ref(false);
+const openCounterTarget = ref<any>(null);
 const openingCashInput = ref<number | string>('');
-const savingOpeningCash = ref(false);
+const openingNote = ref('');
 const openingCashError = ref('');
+const closeTargetId = ref<number>(0);
+const closeTargetDialog = ref(false);
+const canManageCounters = can('pos_manage', 'POS');
+const greeting = computed(() => {
+  const hour = new Date().getHours();
+  return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+});
 
 const barcode = ref('');
 const barcodeInput = ref<any>(null);
@@ -97,7 +104,7 @@ const canReturn = computed(() => can('pos_return', 'POS'));
 const heldKey = computed(() => `posHeld:${authStore.clientstoreId}`);
 const counterName = computed(() => (authStore.client?.full_name || '').toUpperCase());
 const dialogOpen = computed(() => findDialog.value || weightDialog.value || deleteDialog.value || voidDialog.value
-  || heldDialog.value || registerDialog.value || paymentDialog.value || openingCashDialog.value);
+  || heldDialog.value || registerDialog.value || paymentDialog.value || openCounterDialog.value || closeTargetDialog.value);
 
 const round = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 const roundQuantity = (value: number) => Math.round((Number(value) || 0) * 1000) / 1000;
@@ -164,7 +171,6 @@ const functionKeys = computed(() => [
   { key: 'F9', label: 'Save', icon: 'mdi-content-save-outline', action: startPayment, show: true, disabled: !cart.value.length, tone: '' },
   { key: 'F10', label: 'Print Last', icon: 'mdi-printer-outline', action: printLast, show: true, disabled: !lastSale.value, tone: '' },
   { key: '', label: 'Clear Bill', icon: 'mdi-delete-sweep-outline', action: () => (voidDialog.value = true), show: true, disabled: !cart.value.length, tone: 'desk-fn--red' },
-  { key: '', label: 'Opening Cash', icon: 'mdi-cash-lock', action: openOpeningCash, show: authStore.isOwner, disabled: false, tone: 'desk-fn--grey' },
   { key: '', label: 'Close Counter', icon: 'mdi-lock-outline', action: () => (registerDialog.value = true), show: true, disabled: false, tone: 'desk-fn--grey' },
 ].filter((item) => item.show));
 
@@ -186,18 +192,24 @@ async function loadRegister() {
     const response = await axios.get('pos/registers/current', { params: { clientstore_id: authStore.clientstoreId } });
     session.value = response.data.session;
     openElsewhere.value = response.data.open_elsewhere || null;
-    drawerCash.value = Number(response.data.drawer_cash) || 0;
     if (session.value) {
       focusScanner();
       loadLastSale();
-    } else if (!openElsewhere.value && !counterClosed.value) {
-      // The counter opens by itself with the cash carried in the drawer; only the owner changes that amount.
-      await openRegister(true);
+    } else {
+      await loadCounters();
     }
   } catch (error) {
     alerts.fail(error);
   } finally {
     registerLoading.value = false;
+  }
+}
+
+async function loadCounters() {
+  try {
+    counters.value = (await axios.get('pos/counters/list', { params: { clientstore_id: authStore.clientstoreId } })).data;
+  } catch (error) {
+    alerts.fail(error);
   }
 }
 
@@ -210,47 +222,48 @@ async function loadLastSale() {
   }
 }
 
-async function openRegister(automatic = false) {
+function askOpenCounter(counter: any) {
+  openCounterTarget.value = counter;
+  openingCashInput.value = '';
+  openingNote.value = '';
+  openingCashError.value = '';
+  openCounterDialog.value = true;
+}
+
+async function openRegister() {
+  if (openingCashInput.value === '' || Number(openingCashInput.value) < 0) {
+    openingCashError.value = 'Enter the cash you are starting the counter with';
+    return;
+  }
   openingRegister.value = true;
   try {
-    session.value = (await axios.post('pos/registers/open', { clientstore_id: authStore.clientstoreId })).data;
-    counterClosed.value = false;
+    session.value = (await axios.post('pos/registers/open', {
+      clientstore_id: authStore.clientstoreId,
+      counter_id: openCounterTarget.value.id,
+      opening_cash: Number(openingCashInput.value),
+      note: openingNote.value.trim() || undefined,
+    })).data;
+    openCounterDialog.value = false;
     lastSale.value = null;
-    alerts.success(`Counter ${session.value.session_number} ${automatic ? 'started' : 'opened'} with ${formatMoney(session.value.opening_cash)} opening cash`);
+    alerts.success(`${session.value.counter?.name} opened with ${formatMoney(session.value.opening_cash)} opening cash`);
     focusScanner();
   } catch (error) {
-    alerts.fail(error);
+    openingCashError.value = apiError(error);
+    loadCounters();
   } finally {
     openingRegister.value = false;
   }
 }
 
-function openOpeningCash() {
-  openingCashInput.value = session.value ? session.value.opening_cash : drawerCash.value;
-  openingCashError.value = '';
-  openingCashDialog.value = true;
+function askCloseCounter(counter: any) {
+  closeTargetId.value = counter.session.id;
+  closeTargetDialog.value = true;
 }
 
-async function saveOpeningCash() {
-  if (openingCashInput.value === '' || Number(openingCashInput.value) < 0) {
-    openingCashError.value = 'Enter the cash placed in the drawer';
-    return;
-  }
-  savingOpeningCash.value = true;
-  try {
-    const result = (await axios.post('pos/registers/opening-cash', { clientstore_id: authStore.clientstoreId, opening_cash: Number(openingCashInput.value) })).data;
-    drawerCash.value = Number(result.drawer_cash) || 0;
-    if (session.value) {
-      session.value = (await axios.get(`pos/registers/${session.value.id}`)).data;
-    }
-    openingCashDialog.value = false;
-    alerts.success(`Opening cash for ${authStore.storeName} set to ${formatMoney(drawerCash.value)}`);
-    if (session.value) focusScanner();
-  } catch (error) {
-    openingCashError.value = apiError(error);
-  } finally {
-    savingOpeningCash.value = false;
-  }
+function onOtherCounterClosed(closed: any) {
+  closeTargetDialog.value = false;
+  alerts.success(`${closed.counter?.name || 'Counter'} closed. Expected ${formatMoney(closed.expected_cash)}, counted ${formatMoney(closed.closing_cash)}.`);
+  loadCounters();
 }
 
 function addToCart(variant: any, quantity: number) {
@@ -577,16 +590,16 @@ function discardHeld(bill: any) {
 
 function onRegisterClosed(closed: any) {
   session.value = null;
-  counterClosed.value = true;
-  drawerCash.value = Number(closed.closing_cash) || 0;
+  registerDialog.value = false;
   lastSale.value = null;
   reportSale.value = null;
   bills.value = [];
   returnSaleId.value = null;
   resetSale();
   const difference = Number(closed.cash_difference) || 0;
-  const result = difference === 0 ? 'Drawer is balanced.' : difference < 0 ? `Drawer is short by ${formatMoney(-difference)}.` : `Drawer is over by ${formatMoney(difference)}.`;
-  alerts.success(`Counter ${closed.session_number} closed. Expected ${formatMoney(closed.expected_cash)}, counted ${formatMoney(closed.closing_cash)}. ${result}`, 15000);
+  const result = difference === 0 ? 'Counter is balanced.' : difference < 0 ? `Counter is short by ${formatMoney(-difference)}.` : `Counter is over by ${formatMoney(difference)}.`;
+  loadCounters();
+  alerts.success(`${closed.counter?.name || 'Counter'} (${closed.session_number}) closed. Expected ${formatMoney(closed.expected_cash)}, counted ${formatMoney(closed.closing_cash)}. ${result}`, 15000);
 }
 
 function onReturned(result: any) {
@@ -701,7 +714,6 @@ watch(() => authStore.clientstoreId, () => {
   reportSale.value = null;
   bills.value = [];
   tab.value = 'detail';
-  counterClosed.value = false;
   loadRegister();
 });
 
@@ -721,7 +733,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         <span class="desk-window__subtitle">{{ authStore.storeName }}</span>
       </span>
       <template v-if="session">
-        <span class="pos-caption-chip pos-caption-chip--open"><v-icon size="14">mdi-circle</v-icon>Counter {{ session.session_number }}</span>
+        <span class="pos-caption-chip pos-caption-chip--open"><v-icon size="14">mdi-circle</v-icon>{{ session.counter?.name || 'Counter' }} · {{ session.session_number }}</span>
         <span class="pos-caption-chip"><v-icon size="14">mdi-cash</v-icon>Opening {{ formatMoney(session.opening_cash) }}</span>
         <span class="pos-caption-chip"><v-icon size="14">mdi-calendar</v-icon>{{ formatDate(new Date()) }}</span>
       </template>
@@ -736,40 +748,64 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       <v-skeleton-loader type="table" />
     </div>
 
-    <div v-else-if="!session" class="open-counter">
-      <section class="desk-window desk-dialog">
-        <div class="desk-window__caption">
-          <span class="desk-window__title"><v-icon size="16">mdi-lock-open-variant-outline</v-icon>Open Counter</span>
-        </div>
-        <div class="desk-dialog__body">
-          <div class="open-counter__info">
-            <span class="desk-label">Cashier</span><span class="desk-value text-left">{{ authStore.client?.full_name }}</span>
-            <span class="desk-label">Branch</span><span class="desk-value text-left">{{ authStore.storeName }}</span>
-            <span class="desk-label">Date</span><span class="desk-value text-left">{{ formatDate(new Date()) }}</span>
-          </div>
-          <p v-if="openElsewhere" class="mt-4 mb-0">
-            You already have a counter open at <strong>{{ openElsewhere }}</strong>. Switch to that branch or close it there first.
+    <div v-else-if="!session" class="counter-picker">
+      <div class="counter-picker__head">
+        <div>
+          <h2 class="counter-picker__title">{{ greeting }}, {{ authStore.client?.full_name }}</h2>
+          <p class="counter-picker__sub">
+            <v-icon size="15">mdi-store-outline</v-icon>{{ authStore.storeName }}
+            <span class="counter-picker__dot" />
+            <v-icon size="15">mdi-calendar</v-icon>{{ formatDate(new Date()) }}
           </p>
-          <template v-else>
-            <div class="open-counter__info mt-4">
-              <span class="desk-label">Opening Cash</span><span class="desk-value text-left">{{ formatMoney(drawerCash) }}</span>
+        </div>
+        <button type="button" class="desk-btn" title="Refresh" @click="loadCounters">
+          <v-icon size="16">mdi-refresh</v-icon>Refresh
+        </button>
+      </div>
+
+      <div v-if="openElsewhere" class="counter-picker__notice">
+        <v-icon size="20">mdi-alert-circle-outline</v-icon>
+        <span>You already have <strong>{{ openElsewhere }}</strong> open. Switch to that branch or close it there first.</span>
+      </div>
+
+      <template v-else>
+        <p class="counter-picker__lead">Pick a free counter to start selling.</p>
+        <div class="counter-picker__grid">
+          <div v-for="counter in counters" :key="counter.id" class="counter-card" :class="counter.session ? 'counter-card--busy' : 'counter-card--free'">
+            <div class="counter-card__top">
+              <div class="counter-card__icon"><v-icon size="26">mdi-cash-register</v-icon></div>
+              <div class="counter-card__name">
+                <div class="counter-card__title">{{ counter.name }}</div>
+                <div class="counter-card__desc">{{ counter.description || 'Sale counter' }}</div>
+              </div>
+              <span class="counter-card__badge">{{ counter.session ? 'In use' : 'Available' }}</span>
             </div>
-            <p class="text-caption text-lightText mt-1 mb-0">
-              {{ counterClosed ? 'Counter closed. The cash counted at closing stays in the drawer for the next counter.' : 'Cash carried in the drawer from the last counter.' }}
-              <template v-if="!authStore.isOwner">Only the owner can change it.</template>
-            </p>
-          </template>
+
+            <div class="counter-card__body">
+              <template v-if="counter.session">
+                <div class="counter-card__row"><v-icon size="15">mdi-account-outline</v-icon>{{ counter.session.cashier?.full_name }}</div>
+                <div class="counter-card__row"><v-icon size="15">mdi-clock-outline</v-icon>Since {{ formatDateTime(counter.session.opened_at) }}</div>
+              </template>
+              <template v-else>
+                <div class="counter-card__row"><v-icon size="15">mdi-lock-outline</v-icon>Closed</div>
+                <div class="counter-card__row"><v-icon size="15">mdi-receipt-text-outline</v-icon>Today: {{ counter.today.bills }} bills · {{ formatMoney(counter.today.sales) }}</div>
+              </template>
+            </div>
+
+            <button v-if="!counter.session" type="button" class="desk-btn desk-btn--success counter-card__action" @click="askOpenCounter(counter)">
+              <v-icon size="16">mdi-lock-open-variant</v-icon>Open Counter
+            </button>
+            <button v-else-if="canManageCounters" type="button" class="desk-btn desk-btn--danger counter-card__action" @click="askCloseCounter(counter)">
+              <v-icon size="16">mdi-lock-outline</v-icon>Close Counter
+            </button>
+            <div v-else class="counter-card__locked">Already open. It can't be opened again until it is closed.</div>
+          </div>
         </div>
-        <div v-if="!openElsewhere" class="desk-dialog__footer">
-          <button v-if="authStore.isOwner" class="desk-btn" @click="openOpeningCash">
-            <v-icon size="16">mdi-cash-lock</v-icon>Set Opening Cash
-          </button>
-          <button class="desk-btn desk-btn--success" :disabled="openingRegister" @click="openRegister()">
-            <v-progress-circular v-if="openingRegister" indeterminate size="14" width="2" color="white" />
-            <v-icon v-else size="16">mdi-lock-open-variant</v-icon>Open Counter
-          </button>
+        <div v-if="!counters.length" class="counter-picker__notice">
+          <v-icon size="20">mdi-information-outline</v-icon>
+          <span>There are no active counters at this branch. Ask the owner to add one.</span>
         </div>
-      </section>
+      </template>
     </div>
 
     <template v-else>
@@ -1150,19 +1186,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   <PaymentDialog v-model="paymentDialog" :total="totals.total" :saving="placing" :error="paymentError" @finish="placeOrder" />
   <RegisterDialog v-if="session" v-model="registerDialog" :session-id="session.id" @closed="onRegisterClosed" />
 
-  <DeskDialog v-model="openingCashDialog" title="Opening Cash" icon="mdi-cash-lock" :subtitle="authStore.storeName || ''" max-width="420">
+  <RegisterDialog v-if="closeTargetId" v-model="closeTargetDialog" :session-id="closeTargetId" @closed="onOtherCounterClosed" />
+
+  <DeskDialog v-model="openCounterDialog" :title="`Open ${openCounterTarget?.name || 'Counter'}`" icon="mdi-lock-open-variant-outline"
+    :subtitle="authStore.storeName || ''" max-width="440">
     <v-alert v-if="openingCashError" :text="openingCashError" type="error" density="compact" class="mb-3 single-line-alert" />
-    <label class="desk-field-label">Cash in Drawer ({{ authStore.currencyCode }})</label>
-    <v-text-field v-model="openingCashInput" type="number" min="0" autofocus hide-details class="big-input" @keyup.enter="saveOpeningCash" />
-    <p class="text-caption text-lightText mt-2 mb-0">
-      Every counter at this branch opens with this amount until a counter is closed or you change it again.
-      <template v-if="session">The open counter {{ session.session_number }} will use it as its opening cash.</template>
-    </p>
+    <div class="open-summary">
+      <div><span>Cashier</span><strong>{{ authStore.client?.full_name }}</strong></div>
+      <div><span>Counter</span><strong>{{ openCounterTarget?.name }}</strong></div>
+      <div><span>Date</span><strong>{{ formatDate(new Date()) }}</strong></div>
+    </div>
+    <label class="desk-field-label mt-4">Opening Cash ({{ authStore.currencyCode }})</label>
+    <v-text-field v-model="openingCashInput" type="number" min="0" autofocus hide-details class="big-input" placeholder="0" @keyup.enter="openRegister" />
+    <p class="text-caption text-lightText mt-1 mb-3">Count the cash in the counter before you start selling.</p>
+    <label class="desk-field-label">Note</label>
+    <v-text-field v-model="openingNote" hide-details placeholder="Optional" />
     <template #footer>
-      <button type="button" class="desk-btn desk-btn--primary" :disabled="savingOpeningCash" @click="saveOpeningCash">
-        <v-progress-circular v-if="savingOpeningCash" indeterminate size="14" width="2" color="white" />Save
+      <button type="button" class="desk-btn desk-btn--success" :disabled="openingRegister" @click="openRegister">
+        <v-progress-circular v-if="openingRegister" indeterminate size="14" width="2" color="white" />
+        <v-icon v-else size="16">mdi-lock-open-variant</v-icon>Open Counter
       </button>
-      <button type="button" class="desk-btn" @click="openingCashDialog = false">Cancel</button>
+      <button type="button" class="desk-btn" @click="openCounterDialog = false">Cancel</button>
     </template>
   </DeskDialog>
 </template>
@@ -1188,22 +1232,213 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
   color: #1b7f3b;
 }
 
-.open-counter {
+.counter-picker {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+}
+
+.counter-picker__head {
   display: flex;
-  justify-content: center;
-  padding: 40px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #d5dde7;
 }
 
-.open-counter > .desk-window {
-  width: 100%;
-  max-width: 440px;
+.counter-picker__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f3460;
 }
 
-.open-counter__info {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 6px;
+.counter-picker__sub {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 4px 0 0;
+  color: #5f6b7a;
+  font-size: 13px;
+}
+
+.counter-picker__dot {
+  width: 4px;
+  height: 4px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: #aeb9c7;
+}
+
+.counter-picker__lead {
+  margin: 16px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #37474f;
+}
+
+.counter-picker__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #f0c36d;
+  border-radius: 4px;
+  background: #fff8e6;
+  color: #6d4c00;
+  font-size: 13px;
+}
+
+.counter-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.counter-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #aeb9c7;
+  border-top-width: 4px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(15, 52, 96, 0.08);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.counter-card--free {
+  border-top-color: #1b7f3b;
+}
+
+.counter-card--free:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 52, 96, 0.14);
+}
+
+.counter-card--busy {
+  border-top-color: #e0a100;
+  background: #fbfcfd;
+}
+
+.counter-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 10px;
+}
+
+.counter-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: #e8f5ec;
+  color: #1b7f3b;
+}
+
+.counter-card--busy .counter-card__icon {
+  background: #fff4d6;
+  color: #a86f00;
+}
+
+.counter-card__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.counter-card__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f3460;
+}
+
+.counter-card__desc {
+  overflow: hidden;
+  font-size: 12px;
+  color: #5f6b7a;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.counter-card__badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: #e8f5ec;
+  color: #1b7f3b;
+}
+
+.counter-card--busy .counter-card__badge {
+  background: #fff4d6;
+  color: #a86f00;
+}
+
+.counter-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 14px;
+  border-top: 1px dashed #d5dde7;
+}
+
+.counter-card__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: #37474f;
+}
+
+.counter-card__row .v-icon {
+  color: #8795a8;
+}
+
+.counter-card__action {
+  height: 38px;
+  margin: 4px 14px 14px;
+}
+
+.counter-card__locked {
+  margin: 4px 14px 14px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  background: #f1f4f8;
+  color: #5f6b7a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.open-summary {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d5dde7;
+  border-radius: 3px;
+  background: #f4f6f9;
+}
+
+.open-summary > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.open-summary span {
+  color: #5f6b7a;
+}
+
+.open-summary strong {
+  color: #0f3460;
 }
 
 .pos-detail {
