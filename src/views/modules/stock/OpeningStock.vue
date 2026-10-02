@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 import UiParentCard from '@/components/shared/UiParentCard.vue';
@@ -8,11 +8,21 @@ import BtnOutlined from '@/components/shared/BtnOutlined.vue';
 import VariantPicker from '@/components/inventory/VariantPicker.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useAlerts } from '@/composables/useAlerts';
+import { useLocations } from '@/composables/useLocations';
 import { formatMoney, formatNumber } from '@/utils/api';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const alerts = useAlerts();
+const locations = useLocations();
+const storeId = ref<number | null>(authStore.clientstoreId);
+const storeName = computed(() => locations.stores.value.find((store) => store.id === storeId.value)?.store_name || authStore.storeName || '');
+// The owner can load opening stock for the Warehouse and the Mart separately.
+const storeOptions = computed(() => authStore.isStoreBound ? [] : locations.stores.value);
+
+onMounted(() => locations.loadLocations());
+
+watch(storeId, () => { lines.value = []; });
 const note = ref('');
 const lines = ref<any[]>([]);
 const saving = ref(false);
@@ -53,7 +63,7 @@ async function save() {
   saving.value = true;
   try {
     await axios.post('stock/opening', {
-      clientstore_id: authStore.clientstoreId,
+      clientstore_id: storeId.value,
       note: note.value || undefined,
       items: lines.value.map((line) => ({
         product_variant_id: line.product_variant_id,
@@ -78,7 +88,7 @@ async function save() {
 <template>
   <v-row>
     <v-col cols="12">
-      <UiParentCard :title="`Opening Stock · ${authStore.storeName || ''}`" icon="mdi-archive-arrow-down-outline">
+      <UiParentCard :title="`Opening Stock · ${storeName}`" icon="mdi-archive-arrow-down-outline">
         <template #action>
           <v-btn variant="outlined" color="primary" to="/stock" prepend-icon="mdi-arrow-left">Back to Stock</v-btn>
         </template>
@@ -88,9 +98,17 @@ async function save() {
         </v-alert>
 
         <v-row>
+          <v-col v-if="storeOptions.length > 1" cols="12">
+            <v-label class="text-subtitle-1 pb-2 text-lightText">Location</v-label>
+            <v-btn-toggle v-model="storeId" mandatory color="primary" variant="outlined" divided density="comfortable">
+              <v-btn v-for="store in storeOptions" :key="store.id" :value="store.id" :prepend-icon="store.store_type === 'Warehouse' ? 'mdi-warehouse' : 'mdi-storefront-outline'">
+                {{ store.store_name }}
+              </v-btn>
+            </v-btn-toggle>
+          </v-col>
           <v-col cols="12" md="8">
             <v-label class="text-subtitle-1 pb-2 text-lightText">Add Products</v-label>
-            <VariantPicker :clientstore-id="authStore.clientstoreId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
+            <VariantPicker :key="storeId ?? 0" :clientstore-id="storeId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
           </v-col>
           <v-col cols="12" md="4">
             <v-label class="text-subtitle-1 pb-2 text-lightText">Note</v-label>

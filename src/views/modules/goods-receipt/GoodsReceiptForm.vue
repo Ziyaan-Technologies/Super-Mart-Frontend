@@ -10,6 +10,7 @@ import LineTotals from '@/components/inventory/LineTotals.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
+import { useLocations } from '@/composables/useLocations';
 import { documentTotals, lineTotal } from '@/utils/lines';
 import { can } from '@/utils/permissions';
 import { apiError, formatMoney, formatNumber, rules, today } from '@/utils/api';
@@ -19,6 +20,10 @@ const router = useRouter();
 const authStore = useAuthStore();
 const alerts = useAlerts();
 const lookups = useLookups();
+const locations = useLocations();
+// Purchases always land in the Warehouse when one exists, whatever branch is selected.
+const storeId = computed(() => locations.warehouse.value?.id || authStore.clientstoreId);
+const storeName = computed(() => locations.warehouse.value?.store_name || authStore.storeName);
 const id = computed(() => route.params.id as string | undefined);
 const isEdit = computed(() => !!id.value);
 const draftId = ref<number | null>(null);
@@ -40,7 +45,7 @@ const fromOrder = computed(() => !!form.value.purchase_order_id);
 let skipOrderWatch = false;
 
 const orderOptions = computed(() => orders.value
-  .filter((order) => (order.clientstore_id ?? order.clientstore?.id) === authStore.clientstoreId)
+  .filter((order) => (order.clientstore_id ?? order.clientstore?.id) === storeId.value)
   .map((order) => ({ id: order.id, name: `${order.po_number} · ${order.supplier?.name}` })));
 
 function lineFromOrderItem(item: any) {
@@ -119,7 +124,8 @@ async function save(post: boolean) {
   saving.value = true;
   const payload = {
     ...form.value,
-    clientstore_id: authStore.clientstoreId,
+    clientstore_id: storeId.value,
+    supplier_id: form.value.supplier_id || null,
     purchase_order_id: form.value.purchase_order_id || undefined,
     supplier_invoice_number: form.value.supplier_invoice_number || undefined,
     items: lines.value.map((line) => ({
@@ -158,6 +164,7 @@ async function save(post: boolean) {
 onMounted(async () => {
   loading.value = true;
   try {
+    await locations.loadLocations();
     const [, orderResponse] = await Promise.all([lookups.loadSuppliers(), axios.get('purchase-orders/receivable')]);
     orders.value = orderResponse.data;
     if (isEdit.value) {
@@ -228,12 +235,12 @@ onMounted(async () => {
             </v-col>
             <v-col cols="12" sm="6" md="3">
               <v-label class="text-subtitle-1 pb-2 text-lightText">Branch</v-label>
-              <v-text-field :model-value="authStore.storeName" disabled hide-details />
+              <v-text-field :model-value="storeName" disabled hide-details />
             </v-col>
             <v-col cols="12" sm="6" md="3">
-              <v-label class="text-subtitle-1 pb-2 text-lightText">Supplier</v-label>
+              <v-label class="text-subtitle-1 pb-2 text-lightText">Supplier (optional)</v-label>
               <v-autocomplete v-model="form.supplier_id" :items="lookups.suppliers.value" item-title="name" item-value="id" :disabled="fromOrder"
-                :rules="[rules.requiredSelect]" hide-details="auto" />
+                placeholder="No supplier" clearable hide-details />
             </v-col>
             <v-col cols="12" sm="6" md="3">
               <v-label class="text-subtitle-1 pb-2 text-lightText">Received On</v-label>
@@ -250,7 +257,7 @@ onMounted(async () => {
             <v-col cols="12">
               <template v-if="!fromOrder">
                 <v-label class="text-subtitle-1 pb-2 text-lightText">Received Items</v-label>
-                <VariantPicker :clientstore-id="authStore.clientstoreId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
+                <VariantPicker :clientstore-id="storeId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
               </template>
               <v-alert v-else type="info" variant="tonal" density="compact">
                 Lines come from the purchase order. Change quantities to what actually arrived, and remove lines that did not arrive.

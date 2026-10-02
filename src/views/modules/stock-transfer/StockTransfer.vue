@@ -68,14 +68,14 @@ async function remove() {
       <DashboardStatCard title="Transfers" :value="list.kpis.value.totalTransfers ?? 0" icon="mdi-swap-horizontal" comparison-label="In and out of this branch" :show-info-icon="false" />
     </v-col>
     <v-col cols="12" sm="6" lg="3">
-      <DashboardStatCard title="Drafts" :value="list.kpis.value.draftTransfers ?? 0" icon="mdi-file-document-edit-outline" comparison-label="Not dispatched" :show-info-icon="false" />
+      <DashboardStatCard title="Drafts" :value="list.kpis.value.draftTransfers ?? 0" icon="mdi-file-document-edit-outline" comparison-label="Stock not moved yet" :show-info-icon="false" />
     </v-col>
     <v-col cols="12" sm="6" lg="3">
       <DashboardStatCard title="In Transit" :value="list.kpis.value.inTransit ?? 0" icon="mdi-truck-fast-outline" comparison-label="Waiting to be received"
         :show-info-icon="(list.kpis.value.inTransit ?? 0) > 0" />
     </v-col>
     <v-col cols="12" sm="6" lg="3">
-      <DashboardStatCard title="Received" :value="list.kpis.value.receivedTransfers ?? 0" icon="mdi-check-all" comparison-label="Completed" :show-info-icon="false" />
+      <DashboardStatCard title="Received" :value="list.kpis.value.receivedTransfers ?? 0" icon="mdi-check-all" comparison-label="Stock moved" :show-info-icon="false" />
     </v-col>
 
     <v-col cols="12">

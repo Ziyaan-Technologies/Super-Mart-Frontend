@@ -25,6 +25,7 @@
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "google-libphonenumber": "^3.2.40",
+    "jsbarcode": "^3.12.3",
     "lodash": "^4.17.21",
     "maska": "^3.1.0",
     "moment": "^2.30.1",

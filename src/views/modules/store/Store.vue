@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
+import { useLocations } from '@/composables/useLocations';
 import UiParentCard from '@/components/shared/UiParentCard.vue';
 import ListToolbar from '@/components/shared/ListToolbar.vue';
 import TableBottom from '@/components/shared/TableBottom.vue';
@@ -73,6 +74,7 @@ async function openForm(item: any = null) {
   form.value = {
     store_name: data?.store_name || '',
     store_code: data?.store_code || '',
+    store_type: data?.store_type || 'Mart',
     store_phone: data?.store_phone || '',
     store_email: data?.store_email || '',
     address: data?.address || '',
@@ -83,7 +85,7 @@ async function openForm(item: any = null) {
     area_id: data?.area_id || null,
     opening_time: data?.opening_time?.slice(0, 5) || '',
     closing_time: data?.closing_time?.slice(0, 5) || '',
-    is_pos_active: data?.is_pos_active ?? true,
+    is_pos_active: data ? data.is_pos_active : true,
     is_delivery_active: data?.is_delivery_active ?? false,
     is_active: data?.is_active ?? true,
     image_url: data?.image_url || '',
@@ -148,6 +150,7 @@ async function save() {
     }
     drawer.value = false;
     list.refresh();
+    useLocations().loadLocations(true);
     await syncCurrentStore();
   } catch (error) {
     drawerAlerts.fail(error);
@@ -237,6 +240,7 @@ watch(() => route.query.add, (value) => {
               <div class="ml-3">
                 <div class="text-subtitle-2">
                   {{ item.store_name }}
+                  <v-chip v-if="item.store_type === 'Warehouse'" size="x-small" color="warning" variant="tonal" class="ml-1">Warehouse</v-chip>
                   <v-chip v-if="item.id === authStore.clientstoreId" size="x-small" color="primary" variant="tonal" class="ml-1">Current</v-chip>
                 </div>
                 <div class="text-caption text-lightText">{{ item.store_code }} · {{ item.store_phone || 'No phone' }}</div>
@@ -283,6 +287,14 @@ watch(() => route.query.add, (value) => {
       <v-col cols="12" sm="6" class="pt-sm-4">
         <v-label class="text-subtitle-1 pb-2 text-lightText">Branch Code</v-label>
         <v-text-field v-model="form.store_code" :rules="[rules.required]" placeholder="e.g. MAIN" hint="Used on bill numbers" hide-details="auto" />
+      </v-col>
+      <v-col cols="12">
+        <v-label class="text-subtitle-1 pb-2 text-lightText">Type</v-label>
+        <v-btn-toggle v-model="form.store_type" mandatory color="primary" variant="outlined" divided density="comfortable" @update:model-value="(type) => { if (type === 'Warehouse') form.is_pos_active = false; }">
+          <v-btn value="Mart" prepend-icon="mdi-storefront-outline">Mart (sells)</v-btn>
+          <v-btn value="Warehouse" prepend-icon="mdi-warehouse">Warehouse (stock only)</v-btn>
+        </v-btn-toggle>
+        <div class="text-caption text-lightText mt-1">Purchases are received into the Warehouse, then moved to the Mart with a transfer.</div>
       </v-col>
       <v-col cols="12" sm="6">
         <v-label class="text-subtitle-1 pb-2 text-lightText">Phone</v-label>

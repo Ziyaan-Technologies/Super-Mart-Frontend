@@ -11,6 +11,7 @@ import StatusChip from '@/components/shared/StatusChip.vue';
 import { useListPage } from '@/composables/useListPage';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
+import { useLocations } from '@/composables/useLocations';
 import { can } from '@/utils/permissions';
 import { formatDate, formatMoney } from '@/utils/api';
 import type { Header } from '@/models/type-interfaces';
@@ -18,6 +19,7 @@ import type { Header } from '@/models/type-interfaces';
 const router = useRouter();
 const alerts = useAlerts();
 const lookups = useLookups();
+const locations = useLocations();
 const status = ref<string | null>(null);
 const supplierId = ref<number | null>(null);
 const statuses = ['Draft', 'Approved', 'Partially Received', 'Received', 'Cancelled'];
@@ -25,9 +27,17 @@ const statuses = ['Draft', 'Approved', 'Partially Received', 'Received', 'Cancel
 const list = useListPage('purchase-orders', {
   exportName: 'Purchase_Orders',
   storeScoped: true,
-  filters: () => ({ status: status.value || undefined, supplier_id: supplierId.value || undefined }),
+  immediate: false,
+  filters: () => ({
+    status: status.value || undefined,
+    supplier_id: supplierId.value || undefined,
+    // Purchases live in the Warehouse, so show them whichever branch is selected.
+    ...(locations.warehouse.value ? { clientstore_id: locations.warehouse.value.id } : {}),
+  }),
   onError: (error) => alerts.fail(error),
 });
+
+onMounted(() => locations.loadLocations().then(list.refresh));
 
 const headers = ref<Header[]>([
   { title: 'PO NUMBER', align: 'start', key: 'po_number' },
@@ -65,7 +75,7 @@ onMounted(() => {
 <template>
   <v-row>
     <v-col cols="12" sm="6" lg="3">
-      <DashboardStatCard title="Purchase Orders" :value="list.kpis.value.totalOrders ?? 0" icon="mdi-clipboard-list-outline" comparison-label="For this branch" :show-info-icon="false" />
+      <DashboardStatCard title="Purchase Orders" :value="list.kpis.value.totalOrders ?? 0" icon="mdi-clipboard-list-outline" :comparison-label="locations.warehouse.value ? `For ${locations.warehouse.value.store_name}` : 'For this branch'" :show-info-icon="false" />
     </v-col>
     <v-col cols="12" sm="6" lg="3">
       <DashboardStatCard title="Drafts" :value="list.kpis.value.draftOrders ?? 0" icon="mdi-file-document-edit-outline" comparison-label="Waiting for approval" :show-info-icon="false" />

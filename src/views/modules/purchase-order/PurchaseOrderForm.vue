@@ -10,6 +10,7 @@ import LineTotals from '@/components/inventory/LineTotals.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
+import { useLocations } from '@/composables/useLocations';
 import { documentTotals, lineTotal } from '@/utils/lines';
 import { formatMoney, formatNumber, rules, today } from '@/utils/api';
 
@@ -18,6 +19,10 @@ const router = useRouter();
 const authStore = useAuthStore();
 const alerts = useAlerts();
 const lookups = useLookups();
+const locations = useLocations();
+// Purchases always land in the Warehouse when one exists, whatever branch is selected.
+const storeId = computed(() => locations.warehouse.value?.id || authStore.clientstoreId);
+const storeName = computed(() => locations.warehouse.value?.store_name || authStore.storeName);
 const id = computed(() => route.params.id as string | undefined);
 const isEdit = computed(() => !!id.value);
 const formRef = ref<any>(null);
@@ -66,7 +71,7 @@ async function save() {
   saving.value = true;
   const payload = {
     ...form.value,
-    clientstore_id: authStore.clientstoreId,
+    clientstore_id: storeId.value,
     expected_date: form.value.expected_date || undefined,
     items: lines.value.map((line) => ({
       product_variant_id: line.product_variant_id,
@@ -91,6 +96,7 @@ async function save() {
 onMounted(async () => {
   loading.value = true;
   try {
+    await locations.loadLocations();
     await lookups.loadSuppliers();
     if (isEdit.value) {
       const order = (await axios.get(`purchase-orders/${id.value}`)).data;
@@ -136,7 +142,7 @@ onMounted(async () => {
           <v-row>
             <v-col cols="12" sm="6" md="3">
               <v-label class="text-subtitle-1 pb-2 text-lightText">Deliver To</v-label>
-              <v-text-field :model-value="authStore.storeName" disabled hide-details />
+              <v-text-field :model-value="storeName" disabled hide-details />
             </v-col>
             <v-col cols="12" sm="6" md="3">
               <v-label class="text-subtitle-1 pb-2 text-lightText">Supplier</v-label>
@@ -156,7 +162,7 @@ onMounted(async () => {
             </v-col>
             <v-col cols="12">
               <v-label class="text-subtitle-1 pb-2 text-lightText">Products</v-label>
-              <VariantPicker :clientstore-id="authStore.clientstoreId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
+              <VariantPicker :clientstore-id="storeId" show-stock @select="addVariant" @error="(message) => alerts.fail(null, message)" />
             </v-col>
           </v-row>
 

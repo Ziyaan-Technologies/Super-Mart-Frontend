@@ -176,7 +176,8 @@ async function openCounter() {
               <v-avatar size="40" rounded="md" color="lightsuccess"><v-icon color="success" size="20">mdi-counter</v-icon></v-avatar>
               <div>
                 <div class="text-subtitle-2">{{ item.name }}</div>
-                <div v-if="item.description" class="text-caption text-lightText">{{ item.description }}</div>
+                <div v-if="item.assigned_to" class="text-caption text-primary"><v-icon size="13">mdi-account-lock-outline</v-icon> Cashier: {{ item.assigned_to.full_name }}</div>
+                <div v-else-if="item.description" class="text-caption text-lightText">{{ item.description }}</div>
               </div>
             </div>
           </template>

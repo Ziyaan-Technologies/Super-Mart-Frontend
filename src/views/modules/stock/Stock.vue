@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import UiParentCard from '@/components/shared/UiParentCard.vue';
 import DashboardStatCard from '@/components/shared/DashboardStatCard.vue';
@@ -9,6 +9,7 @@ import StatusChip from '@/components/shared/StatusChip.vue';
 import { useListPage } from '@/composables/useListPage';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
+import { useLocations } from '@/composables/useLocations';
 import { can } from '@/utils/permissions';
 import { formatDate, formatMoney, formatNumber } from '@/utils/api';
 import type { Header } from '@/models/type-interfaces';
@@ -17,6 +18,8 @@ const route = useRoute();
 const router = useRouter();
 const alerts = useAlerts();
 const lookups = useLookups();
+const locations = useLocations();
+const hasWarehouse = locations.hasWarehouse;
 const tab = ref(route.query.tab === 'expiry' ? 'expiry' : 'stock');
 const categoryId = ref<number | null>(null);
 const brandId = ref<number | null>(null);
@@ -28,13 +31,17 @@ const statusOptions = [
   { title: 'In stock', value: 'in' },
   { title: 'Low stock', value: 'low' },
   { title: 'Out of stock', value: 'out' },
+  { title: 'Refill Mart', value: 'refill' },
 ];
 const sortOptions = ['Name', 'Quantity Low', 'Quantity High', 'Newest', 'Oldest'];
 
 const list = useListPage('stock', {
   exportName: 'Stock',
   storeScoped: true,
+  immediate: false,
   filters: () => ({
+    // With a warehouse, show every location side by side instead of only the selected branch.
+    ...(hasWarehouse.value ? { clientstore_id: undefined } : {}),
     category_id: categoryId.value || undefined,
     brand_id: brandId.value || undefined,
     stock_status: stockStatus.value || undefined,
@@ -52,11 +59,18 @@ const expiry = useListPage('stock', {
   onError: (error) => alerts.fail(error),
 });
 
-const headers = ref<Header[]>([
+const headers = computed<Header[]>(() => [
   { title: 'PRODUCT', align: 'start', key: 'product_name' },
   { title: 'SKU', align: 'start', key: 'sku' },
   { title: 'CATEGORY', align: 'start', key: 'category_name' },
-  { title: 'ON HAND', align: 'start', key: 'quantity' },
+  ...(hasWarehouse.value
+    ? [
+      { title: (locations.warehouse.value?.store_name || 'Warehouse').toUpperCase(), align: 'start', key: 'warehouse_quantity' },
+      { title: (locations.mart.value?.store_name || 'Mart').toUpperCase(), align: 'start', key: 'mart_quantity' },
+      { title: 'TOTAL', align: 'start', key: 'quantity' },
+      { title: 'MART MIN', align: 'start', key: 'mart_min_level' },
+    ] as Header[]
+    : [{ title: 'ON HAND', align: 'start', key: 'quantity' }] as Header[]),
   { title: 'REORDER AT', align: 'start', key: 'reorder_level' },
   { title: 'AVG COST', align: 'start', key: 'average_cost' },
   { title: 'SALE PRICE', align: 'start', key: 'sale_price' },
@@ -64,6 +78,10 @@ const headers = ref<Header[]>([
   { title: 'STATUS', align: 'start', key: 'stock_status' },
   { title: 'ACTIONS', key: 'actions', sortable: false },
 ]);
+
+function refillMart(item: any = null) {
+  router.push({ path: '/stock-transfers/create', query: { refill: item ? item.product_variant_id : '' } });
+}
 
 const expiryHeaders = ref<Header[]>([
   { title: 'PRODUCT', align: 'start', key: 'product' },
@@ -88,6 +106,7 @@ watch(tab, (value) => {
 });
 
 onMounted(async () => {
+  locations.loadLocations().then(list.refresh);
   if (tab.value === 'expiry') expiry.fetchData();
   try {
     await Promise.all([lookups.loadCategories(), lookups.loadBrands()]);
@@ -99,19 +118,23 @@ onMounted(async () => {
 
 <template>
   <v-row>
-    <v-col cols="12" sm="6" lg="3">
+    <v-col cols="12" sm="6" :lg="hasWarehouse ? true : 3">
       <DashboardStatCard title="Stock Value" :value="formatMoney(list.kpis.value.stockValue)" icon="mdi-cash-multiple"
         :comparison-label="`${list.kpis.value.skuCount ?? 0} SKUs at average cost`" :show-info-icon="false" />
     </v-col>
-    <v-col cols="12" sm="6" lg="3">
+    <v-col cols="12" sm="6" :lg="hasWarehouse ? true : 3">
       <DashboardStatCard title="Low Stock" :value="list.kpis.value.lowStock ?? 0" icon="mdi-alert-outline"
         comparison-label="At or below reorder level" :show-info-icon="false" />
     </v-col>
-    <v-col cols="12" sm="6" lg="3">
+    <v-col v-if="hasWarehouse" cols="12" sm="6" :lg="true">
+      <DashboardStatCard title="Refill Mart" :value="list.kpis.value.refillMart ?? 0" icon="mdi-cart-arrow-right"
+        comparison-label="Mart at or below its minimum" :show-info-icon="(list.kpis.value.refillMart ?? 0) > 0" />
+    </v-col>
+    <v-col cols="12" sm="6" :lg="hasWarehouse ? true : 3">
       <DashboardStatCard title="Out of Stock" :value="list.kpis.value.outOfStock ?? 0" icon="mdi-close-octagon-outline"
         comparison-label="Nothing on hand" :show-info-icon="(list.kpis.value.outOfStock ?? 0) > 0" />
     </v-col>
-    <v-col cols="12" sm="6" lg="3">
+    <v-col cols="12" sm="6" :lg="hasWarehouse ? true : 3">
       <DashboardStatCard title="Expiring in 30 days" :value="list.kpis.value.expiringSoon ?? 0" icon="mdi-calendar-alert"
         :comparison-label="`${list.kpis.value.expired ?? 0} batches expired`" :show-info-icon="(list.kpis.value.expired ?? 0) > 0" />
     </v-col>
@@ -120,6 +143,8 @@ onMounted(async () => {
       <UiParentCard title="Stock" icon="mdi-warehouse">
         <template #action>
           <div class="d-flex gap-2">
+            <v-btn v-if="hasWarehouse && can('stock_transfers_create', 'Stock Transfer')" color="warning" variant="tonal" prepend-icon="mdi-cart-arrow-right"
+              :disabled="!(list.kpis.value.refillMart > 0)" @click="refillMart()">Refill Mart ({{ list.kpis.value.refillMart ?? 0 }})</v-btn>
             <v-btn variant="outlined" color="primary" to="/stock/movements" prepend-icon="mdi-history">Stock Ledger</v-btn>
             <v-btn v-if="can('stock_opening', 'Stock')" color="primary" to="/stock/opening" prepend-icon="mdi-database-plus-outline">Opening Stock</v-btn>
           </div>
@@ -169,13 +194,25 @@ onMounted(async () => {
               </template>
               <template v-slot:item.category_name="{ item }">{{ item.category_name || '-' }}</template>
               <template v-slot:item.quantity="{ item }"><strong>{{ formatNumber(item.quantity, 3) }}</strong> {{ item.stock_unit }}</template>
+              <template v-slot:item.warehouse_quantity="{ item }">{{ formatNumber(item.warehouse_quantity, 3) }}</template>
+              <template v-slot:item.mart_quantity="{ item }">
+                <span :class="item.needs_refill ? 'text-warning font-weight-bold' : ''">{{ formatNumber(item.mart_quantity, 3) }}</span>
+              </template>
+              <template v-slot:item.mart_min_level="{ item }">{{ item.mart_min_level ? formatNumber(item.mart_min_level, 3) : '-' }}</template>
               <template v-slot:item.reorder_level="{ item }">{{ formatNumber(item.reorder_level, 3) }}</template>
               <template v-slot:item.average_cost="{ item }">{{ formatMoney(item.average_cost) }}</template>
               <template v-slot:item.sale_price="{ item }">{{ formatMoney(item.sale_price) }}</template>
               <template v-slot:item.stock_value="{ item }">{{ formatMoney(item.stock_value) }}</template>
-              <template v-slot:item.stock_status="{ item }"><StatusChip :status="item.stock_status" /></template>
+              <template v-slot:item.stock_status="{ item }">
+                <div class="d-flex flex-column align-start ga-1 py-1">
+                  <StatusChip :status="item.stock_status" />
+                  <v-chip v-if="hasWarehouse && item.needs_refill" size="small" color="warning" variant="tonal">Refill Mart</v-chip>
+                </div>
+              </template>
               <template v-slot:item.actions="{ item }">
                 <div class="d-flex">
+                  <v-btn v-if="hasWarehouse && item.needs_refill && $can('stock_transfers_create', 'Stock Transfer')" icon="mdi-cart-arrow-right" color="#FFF4E5" size="small"
+                    class="me-2 text-warning" :title="`Move ${formatNumber(item.refill_quantity, 3)} to the Mart`" @click="refillMart(item)"></v-btn>
                   <v-btn icon="mdi-history" color="#EFF0F1" size="small" class="me-2" title="View ledger" @click="openLedger(item)"></v-btn>
                   <v-btn v-if="$can('stock_adjustments_create', 'Stock Adjustment')" icon="mdi-tune-vertical" color="#EFF0F1" size="small" title="Adjust stock"
                     @click="router.push('/stock-adjustments/create')"></v-btn>

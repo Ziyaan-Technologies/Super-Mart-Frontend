@@ -769,14 +769,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
 
       <template v-else>
-        <p class="counter-picker__lead">Pick a free counter to start selling.</p>
+        <p class="counter-picker__lead">{{ canManageCounters ? 'Pick a free counter to start selling.' : 'Open your counter to start selling.' }}</p>
         <div class="counter-picker__grid">
           <div v-for="counter in counters" :key="counter.id" class="counter-card" :class="counter.session ? 'counter-card--busy' : 'counter-card--free'">
             <div class="counter-card__top">
               <div class="counter-card__icon"><v-icon size="26">mdi-cash-register</v-icon></div>
               <div class="counter-card__name">
                 <div class="counter-card__title">{{ counter.name }}</div>
-                <div class="counter-card__desc">{{ counter.description || 'Sale counter' }}</div>
+                <div class="counter-card__desc">{{ counter.assigned_to ? `${counter.assigned_to.full_name}'s counter` : counter.description || 'Shared counter' }}</div>
               </div>
               <span class="counter-card__badge">{{ counter.session ? 'In use' : 'Available' }}</span>
             </div>
@@ -803,7 +803,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </div>
         <div v-if="!counters.length" class="counter-picker__notice">
           <v-icon size="20">mdi-information-outline</v-icon>
-          <span>There are no active counters at this branch. Ask the owner to add one.</span>
+          <span>{{ canManageCounters ? 'There are no active counters at this branch. Add one from the Counters page.' : 'No counter is assigned to you, or it is inactive. Ask the owner or manager.' }}</span>
         </div>
       </template>
     </div>

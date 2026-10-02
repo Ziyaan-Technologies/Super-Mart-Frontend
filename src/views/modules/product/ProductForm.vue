@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import UiParentCard from '@/components/shared/UiParentCard.vue';
 import BtnFilled from '@/components/shared/BtnFilled.vue';
 import BtnOutlined from '@/components/shared/BtnOutlined.vue';
 import ImageField from '@/components/shared/ImageField.vue';
+import LabelPrintDialog from '@/components/inventory/LabelPrintDialog.vue';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
 import { formatMoney, rules, uploadImage } from '@/utils/api';
@@ -21,6 +22,8 @@ const units = ref<any[]>([]);
 const taxes = ref<any[]>([]);
 const loading = ref(false);
 const saving = ref(false);
+const printing = ref(false);
+const labelsOpen = ref(false);
 const imageFile = ref<File | null>(null);
 const form = ref<any>({
   name: '',
@@ -49,8 +52,8 @@ function blankVariant() {
     unit_quantity: 1,
     cost_price: 0,
     sale_price: 0,
-    mrp: null,
     reorder_level: 0,
+    mart_min_level: 0,
     is_active: true,
   };
 }
@@ -81,42 +84,42 @@ function variantError() {
   return '';
 }
 
-async function save() {
+async function persist() {
   const { valid } = await formRef.value.validate();
-  if (!valid) return;
+  if (!valid) return null;
   const message = variantError();
   if (message) {
     alerts.fail(null, message);
-    return;
+    return null;
   }
+  const image = await uploadImage('product', imageFile.value);
+  const payload = {
+    ...form.value,
+    name: form.value.name.trim(),
+    image_url: image || form.value.image_url || undefined,
+    brand_id: form.value.brand_id || null,
+    tax_id: form.value.tax_id || null,
+    variants: variants.value.map((variant) => ({
+      ...(variant.id ? { id: variant.id } : {}),
+      name: variant.name.trim(),
+      sku: variant.sku.trim(),
+      barcode: variant.barcode?.trim() || undefined,
+      unit_quantity: Number(variant.unit_quantity),
+      cost_price: Number(variant.cost_price) || 0,
+      sale_price: Number(variant.sale_price) || 0,
+      reorder_level: Number(variant.reorder_level) || 0,
+      mart_min_level: Number(variant.mart_min_level) || 0,
+      is_active: variant.is_active,
+    })),
+  };
+  const response = isEdit.value ? await axios.put(`products/${id.value}`, payload) : await axios.post('products', payload);
+  return response.data;
+}
+
+async function save() {
   saving.value = true;
   try {
-    const image = await uploadImage('product', imageFile.value);
-    const payload = {
-      ...form.value,
-      name: form.value.name.trim(),
-      image_url: image || form.value.image_url || undefined,
-      brand_id: form.value.brand_id || null,
-      tax_id: form.value.tax_id || null,
-      variants: variants.value.map((variant) => ({
-        ...(variant.id ? { id: variant.id } : {}),
-        name: variant.name.trim(),
-        sku: variant.sku.trim(),
-        barcode: variant.barcode?.trim() || undefined,
-        unit_quantity: Number(variant.unit_quantity),
-        cost_price: Number(variant.cost_price) || 0,
-        sale_price: Number(variant.sale_price) || 0,
-        mrp: variant.mrp === null || variant.mrp === '' ? undefined : Number(variant.mrp),
-        reorder_level: Number(variant.reorder_level) || 0,
-        is_active: variant.is_active,
-      })),
-    };
-    if (isEdit.value) {
-      await axios.put(`products/${id.value}`, payload);
-    } else {
-      await axios.post('products', payload);
-    }
-    router.push('/products');
+    if (await persist()) router.push('/products');
   } catch (error) {
     alerts.fail(error);
   } finally {
@@ -124,7 +127,45 @@ async function save() {
   }
 }
 
-onMounted(async () => {
+async function saveAndPrint() {
+  printing.value = true;
+  try {
+    const saved = await persist();
+    if (!saved) return;
+    const { data } = await axios.post(`products/${saved.id}/barcodes`);
+    imageFile.value = null;
+    if (!isEdit.value) {
+      // Move a new product to its edit page, so saving again updates it instead of creating a copy.
+      await router.replace({ name: 'ProductEdit', params: { id: data.id }, query: { labels: '1' } });
+      return;
+    }
+    applyProduct(data);
+    labelsOpen.value = true;
+  } catch (error) {
+    alerts.fail(error);
+  } finally {
+    printing.value = false;
+  }
+}
+
+function applyProduct(product: any) {
+  form.value = {
+    name: product.name,
+    description: product.description || '',
+    category_id: product.category_id,
+    brand_id: product.brand_id || null,
+    unit_id: product.unit_id,
+    tax_id: product.tax_id || null,
+    price_includes_tax: product.price_includes_tax,
+    is_weighted: product.is_weighted,
+    track_expiry: product.track_expiry,
+    is_active: product.is_active,
+    image_url: product.image_url || '',
+  };
+  variants.value = product.variants.map((variant: any) => ({ ...variant, barcode: variant.barcode || '' }));
+}
+
+async function load() {
   loading.value = true;
   try {
     const [, , unitResponse, taxResponse] = await Promise.all([
@@ -136,29 +177,25 @@ onMounted(async () => {
     units.value = unitResponse.data.map((unit: any) => ({ ...unit, label: `${unit.name} (${unit.short_name})` }));
     taxes.value = taxResponse.data.map((tax: any) => ({ ...tax, label: `${tax.name} · ${tax.rate}%` }));
     if (isEdit.value) {
-      const product = (await axios.get(`products/${id.value}`)).data;
-      form.value = {
-        name: product.name,
-        description: product.description || '',
-        category_id: product.category_id,
-        brand_id: product.brand_id || null,
-        unit_id: product.unit_id,
-        tax_id: product.tax_id || null,
-        price_includes_tax: product.price_includes_tax,
-        is_weighted: product.is_weighted,
-        track_expiry: product.track_expiry,
-        is_active: product.is_active,
-        image_url: product.image_url || '',
-      };
-      variants.value = product.variants.map((variant: any) => ({ ...variant, barcode: variant.barcode || '' }));
+      applyProduct((await axios.get(`products/${id.value}`)).data);
     } else {
       variants.value = [blankVariant()];
+    }
+    if (route.query.labels) {
+      labelsOpen.value = true;
+      router.replace({ query: {} });
     }
   } catch (error) {
     alerts.fail(error);
   } finally {
     loading.value = false;
   }
+}
+
+onMounted(load);
+// The create and edit routes share this component, so reload when it is reused for another product.
+watch(() => route.params.id, (next, previous) => {
+  if (next !== previous) load();
 });
 </script>
 
@@ -250,8 +287,8 @@ onMounted(async () => {
                   <th style="width: 110px">PACK SIZE</th>
                   <th style="width: 120px">COST</th>
                   <th style="width: 120px">SALE PRICE</th>
-                  <th style="width: 110px">MRP</th>
-                  <th style="width: 110px">REORDER AT</th>
+                  <th style="width: 110px" title="Buy from the supplier when total stock falls to this">REORDER AT</th>
+                  <th style="width: 110px" title="Refill the Mart from the warehouse when Mart stock falls to this">MART MIN</th>
                   <th style="width: 90px">MARGIN</th>
                   <th style="width: 70px">ACTIVE</th>
                   <th style="width: 60px"></th>
@@ -265,8 +302,8 @@ onMounted(async () => {
                   <td><v-text-field v-model.number="variant.unit_quantity" type="number" min="0" density="compact" hide-details /></td>
                   <td><v-text-field v-model.number="variant.cost_price" type="number" min="0" density="compact" hide-details /></td>
                   <td><v-text-field v-model.number="variant.sale_price" type="number" min="0" density="compact" hide-details /></td>
-                  <td><v-text-field v-model.number="variant.mrp" type="number" min="0" density="compact" hide-details /></td>
                   <td><v-text-field v-model.number="variant.reorder_level" type="number" min="0" density="compact" hide-details /></td>
+                  <td><v-text-field v-model.number="variant.mart_min_level" type="number" min="0" density="compact" hide-details /></td>
                   <td>
                     <span v-if="margin(variant) !== null" :class="(margin(variant) ?? 0) < 0 ? 'text-error font-weight-bold' : ''">{{ margin(variant) }}%</span>
                     <span v-else class="text-lightText">-</span>
@@ -286,9 +323,13 @@ onMounted(async () => {
 
           <div class="d-flex justify-end gap-2 mt-6">
             <BtnOutlined type="button" outline="Cancel" @click="router.back()" />
-            <BtnFilled type="button" :filled="isEdit ? 'Save Changes' : 'Create Product'" :loading="saving" @click="save" />
+            <v-btn v-if="!form.is_weighted" variant="outlined" color="primary" prepend-icon="mdi-barcode" :loading="printing" :disabled="saving" @click="saveAndPrint">
+              Save &amp; Print Labels
+            </v-btn>
+            <BtnFilled type="button" :filled="isEdit ? 'Save Changes' : 'Create Product'" :loading="saving" :disabled="printing" @click="save" />
           </div>
         </v-form>
+        <LabelPrintDialog v-model="labelsOpen" :product-name="form.name" :variants="variants" />
       </UiParentCard>
     </v-col>
   </v-row>

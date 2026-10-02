@@ -78,7 +78,7 @@ onMounted(load);
           <v-card elevation="0" class="border rounded-md mb-4">
             <v-card-text>
               <v-row>
-                <v-col cols="6" md="3"><div class="text-caption text-lightText">Supplier</div><div class="font-weight-semibold">{{ receipt.supplier?.name }}</div></v-col>
+                <v-col cols="6" md="3"><div class="text-caption text-lightText">Supplier</div><div class="font-weight-semibold">{{ receipt.supplier?.name || '-' }}</div></v-col>
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Branch</div><div class="font-weight-semibold">{{ receipt.clientstore?.store_name }}</div></v-col>
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Received On</div><div class="font-weight-semibold">{{ formatDate(receipt.received_date) }}</div></v-col>
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Supplier Invoice</div><div class="font-weight-semibold">{{ receipt.supplier_invoice_number || '-' }}</div></v-col>

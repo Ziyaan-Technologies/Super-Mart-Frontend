@@ -23,10 +23,11 @@ const receiving = ref(false);
 const received = ref<Record<number, number>>({});
 const receiveNote = ref('');
 const confirmOpen = ref(false);
-const confirmAction = ref<'dispatch' | 'cancel'>('dispatch');
+const confirmAction = ref<'complete' | 'cancel'>('complete');
 
-const atSource = computed(() => authStore.clientstoreId === transfer.value?.from_clientstore_id);
-const atDestination = computed(() => authStore.clientstoreId === transfer.value?.to_clientstore_id);
+// Staff tied to one branch act only for it; the owner can act for every location.
+const atSource = computed(() => !authStore.isStoreBound || authStore.clientstoreId === transfer.value?.from_clientstore_id);
+const atDestination = computed(() => !authStore.isStoreBound || authStore.clientstoreId === transfer.value?.to_clientstore_id);
 const canDispatch = computed(() => transfer.value?.status === 'Draft' && atSource.value && can('stock_transfers_dispatch', 'Stock Transfer'));
 const canReceive = computed(() => transfer.value?.status === 'Dispatched' && atDestination.value && can('stock_transfers_receive', 'Stock Transfer'));
 
@@ -42,16 +43,16 @@ async function load() {
   }
 }
 
-function ask(action: 'dispatch' | 'cancel') {
+function ask(action: 'complete' | 'cancel') {
   confirmAction.value = action;
   confirmOpen.value = true;
 }
 
-async function run(action: 'dispatch' | 'cancel') {
+async function run(action: 'complete' | 'cancel') {
   working.value = true;
   try {
     transfer.value = (await axios.put(`stock-transfers/${transfer.value.id}/${action}`)).data;
-    alerts.success(action === 'dispatch' ? 'Transfer dispatched. Stock has left this branch!' : 'Transfer has been cancelled!');
+    alerts.success(action === 'complete' ? `Stock moved to ${transfer.value.to_clientstore?.store_name}!` : 'Transfer has been cancelled!');
   } catch (error) {
     alerts.fail(error);
   } finally {
@@ -95,7 +96,7 @@ onMounted(load);
               prepend-icon="mdi-pencil-outline" :to="`/stock-transfers/${transfer.id}/edit`">Edit</v-btn>
             <v-btn v-if="transfer.status === 'Draft' && atSource && can('stock_transfers_edit', 'Stock Transfer')" variant="tonal" color="error" :loading="working"
               @click="ask('cancel')">Cancel Transfer</v-btn>
-            <v-btn v-if="canDispatch" color="primary" prepend-icon="mdi-truck-fast-outline" :loading="working" @click="ask('dispatch')">Dispatch</v-btn>
+            <v-btn v-if="canDispatch" color="primary" prepend-icon="mdi-swap-horizontal-bold" :loading="working" @click="ask('complete')">Move Stock</v-btn>
             <v-btn v-if="canReceive && !receiving" color="primary" prepend-icon="mdi-package-down" @click="receiving = true">Receive</v-btn>
             <v-btn variant="text" color="primary" prepend-icon="mdi-arrow-left" @click="router.push('/stock-transfers')">Back</v-btn>
           </div>
@@ -130,7 +131,7 @@ onMounted(load);
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Created By</div><div class="font-weight-semibold">{{ transfer.created_by?.full_name || '-' }}</div></v-col>
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Dispatched</div><div class="font-weight-semibold">{{ transfer.dispatched_at ? formatDate(transfer.dispatched_at) : '-' }}</div><div class="text-caption">{{ transfer.dispatched_by?.full_name }}</div></v-col>
                 <v-col cols="6" md="3"><div class="text-caption text-lightText">Received</div><div class="font-weight-semibold">{{ transfer.received_at ? formatDate(transfer.received_at) : '-' }}</div><div class="text-caption">{{ transfer.received_by?.full_name }}</div></v-col>
-                <v-col cols="6" md="3"><div class="text-caption text-lightText">Value at Cost</div><div class="font-weight-semibold">{{ transfer.status === 'Draft' ? 'Set on dispatch' : formatMoney(transfer.total_value) }}</div></v-col>
+                <v-col cols="6" md="3"><div class="text-caption text-lightText">Value at Cost</div><div class="font-weight-semibold">{{ transfer.status === 'Draft' ? 'Set when moved' : formatMoney(transfer.total_value) }}</div></v-col>
                 <v-col v-if="transfer.note" cols="12" md="3"><div class="text-caption text-lightText">Note</div><div class="font-weight-semibold">{{ transfer.note }}</div></v-col>
                 <v-col v-if="transfer.receive_note" cols="12" md="6"><div class="text-caption text-lightText">Receiving Notes</div><div class="font-weight-semibold" style="white-space: pre-line">{{ transfer.receive_note }}</div></v-col>
               </v-row>
@@ -190,10 +191,10 @@ onMounted(load);
   </v-row>
 
   <DeleteDialog v-model="confirmOpen"
-    :message="confirmAction === 'dispatch' ? `Dispatch ${transfer?.transfer_number}?` : `Cancel ${transfer?.transfer_number}?`"
-    :hint="confirmAction === 'dispatch' ? 'Stock leaves this branch now and is in transit until the other branch receives it.' : 'A cancelled transfer cannot be reopened.'"
-    :confirm-label="confirmAction === 'dispatch' ? 'Yes, Dispatch' : 'Yes, Cancel'"
-    :icon="confirmAction === 'dispatch' ? 'mdi-truck-fast-outline' : 'mdi-close-octagon-outline'"
-    :tone="confirmAction === 'dispatch' ? 'primary' : 'error'"
+    :message="confirmAction === 'complete' ? `Move stock for ${transfer?.transfer_number}?` : `Cancel ${transfer?.transfer_number}?`"
+    :hint="confirmAction === 'complete' ? `Stock is taken out of ${transfer?.from_clientstore?.store_name} and added to ${transfer?.to_clientstore?.store_name} now.` : 'A cancelled transfer cannot be reopened.'"
+    :confirm-label="confirmAction === 'complete' ? 'Yes, Move Stock' : 'Yes, Cancel'"
+    :icon="confirmAction === 'complete' ? 'mdi-swap-horizontal-bold' : 'mdi-close-octagon-outline'"
+    :tone="confirmAction === 'complete' ? 'primary' : 'error'"
     @confirm="run(confirmAction)" />
 </template>
