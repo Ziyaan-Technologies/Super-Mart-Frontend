@@ -385,6 +385,16 @@ const MainRoutes = {
             }
         },
         {
+            name: 'Roles',
+            path: '/roles',
+            component: () => import('@/views/modules/role/Roles.vue'),
+            meta: {
+                requiresAuth: true,
+                action: ['roles_view'],
+                subject: 'Roles'
+            }
+        },
+        {
             name: 'Store',
             path: '/store',
             component: () => import('@/views/modules/store/Store.vue'),
