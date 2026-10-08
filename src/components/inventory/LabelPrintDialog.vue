@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import DeskDialog from '@/components/shared/DeskDialog.vue';
-import { defaultLayout, labelsDocument, loadLayout, pageWidth, printLabels, saveLayout, type LabelItem } from '@/utils/labels';
+import { defaultLayout, labelName, labelPrice, labelsDocument, loadLayout, pageWidth, printLabels, saveLayout, type LabelItem } from '@/utils/labels';
 
 const props = defineProps<{
   modelValue: boolean;
   productName: string;
   variants: any[];
+  priceIncludesTax?: boolean;
+  taxRate?: number;
 }>();
 
 const emit = defineEmits<{
@@ -19,14 +21,17 @@ const showSetup = ref(false);
 
 const printable = computed(() => props.variants.filter((variant) => variant.is_active && variant.barcode));
 
-function title(variant: any) {
-  const name = variant.name?.trim();
-  return !name || name.toLowerCase() === 'standard' ? props.productName : `${props.productName} ${name}`;
+// The price the customer pays at the till, so tax is added when sale prices exclude it.
+function shelfPrice(variant: any) {
+  const price = Number(variant.sale_price) || 0;
+  const rate = props.priceIncludesTax ? 0 : Number(props.taxRate) || 0;
+  return Math.round(price * (1 + rate / 100) * 100) / 100;
 }
 
 const items = computed<LabelItem[]>(() => printable.value.map((variant) => ({
-  title: title(variant),
+  title: labelName(props.productName),
   barcode: variant.barcode,
+  price: shelfPrice(variant),
   copies: Number(copies.value[variant.id]) || 0,
 })));
 
@@ -70,6 +75,7 @@ function print() {
           <tr>
             <th>VARIANT</th>
             <th>BARCODE</th>
+            <th>PRICE</th>
             <th style="width: 130px">LABELS</th>
           </tr>
         </thead>
@@ -77,6 +83,7 @@ function print() {
           <tr v-for="variant in printable" :key="variant.id">
             <td>{{ variant.name }}</td>
             <td class="font-weight-medium">{{ variant.barcode }}</td>
+            <td>{{ labelPrice(shelfPrice(variant)) }}</td>
             <td><v-text-field v-model.number="copies[variant.id]" type="number" min="0" density="compact" hide-details /></td>
           </tr>
         </tbody>

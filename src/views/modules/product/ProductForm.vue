@@ -329,7 +329,7 @@ watch(() => route.params.id, (next, previous) => {
             <BtnFilled type="button" :filled="isEdit ? 'Save Changes' : 'Create Product'" :loading="saving" :disabled="printing" @click="save" />
           </div>
         </v-form>
-        <LabelPrintDialog v-model="labelsOpen" :product-name="form.name" :variants="variants" />
+        <LabelPrintDialog v-model="labelsOpen" :product-name="form.name" :variants="variants" :price-includes-tax="form.price_includes_tax" :tax-rate="Number(selectedTax?.rate) || 0" />
       </UiParentCard>
     </v-col>
   </v-row>

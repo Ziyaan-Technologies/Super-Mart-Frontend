@@ -10,8 +10,11 @@ import { useListPage } from '@/composables/useListPage';
 import { useAlerts } from '@/composables/useAlerts';
 import { useLookups } from '@/composables/useLookups';
 import { useLocations } from '@/composables/useLocations';
+import { useAuthStore } from '@/stores/auth';
+import axios from 'axios';
 import { can } from '@/utils/permissions';
-import { formatDate, formatMoney, formatNumber } from '@/utils/api';
+import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/utils/api';
+import { escapeHtml, printDocument } from '@/utils/print';
 import type { Header } from '@/models/type-interfaces';
 
 const route = useRoute();
@@ -19,6 +22,7 @@ const router = useRouter();
 const alerts = useAlerts();
 const lookups = useLookups();
 const locations = useLocations();
+const authStore = useAuthStore();
 const hasWarehouse = locations.hasWarehouse;
 const tab = ref(route.query.tab === 'expiry' ? 'expiry' : 'stock');
 const categoryId = ref<number | null>(null);
@@ -29,7 +33,8 @@ const expiryDays = ref(60);
 
 const statusOptions = [
   { title: 'In stock', value: 'in' },
-  { title: 'Low stock', value: 'low' },
+  { title: 'Low stock (Mart / Warehouse)', value: 'needs_stock' },
+  { title: 'Low stock (total only)', value: 'low' },
   { title: 'Out of stock', value: 'out' },
   { title: 'Refill Mart', value: 'refill' },
 ];
@@ -78,6 +83,93 @@ const headers = computed<Header[]>(() => [
   { title: 'STATUS', align: 'start', key: 'stock_status' },
   { title: 'ACTIONS', key: 'actions', sortable: false },
 ]);
+
+const lowOnly = computed(() => stockStatus.value === 'needs_stock');
+
+function toggleLowOnly() {
+  stockStatus.value = lowOnly.value ? null : 'needs_stock';
+  list.reload();
+}
+
+const printing = ref(false);
+
+// What has to happen for a row: buy more, move stock from the warehouse to the Mart, or both.
+function stockAction(item: any) {
+  const actions: string[] = [];
+  if (item.quantity <= item.reorder_level) actions.push(item.quantity <= 0 ? 'Out - Buy' : 'Buy');
+  if (hasWarehouse.value && item.mart_min_level > 0 && item.mart_quantity <= item.mart_min_level) {
+    actions.push(item.warehouse_quantity > 0 ? `Move ${formatNumber(item.refill_quantity, 3)} to Mart` : 'Mart low');
+  }
+  return actions.join(', ') || 'OK';
+}
+
+function stockReportDocument(rows: any[], title: string) {
+  const warehouseName = locations.warehouse.value?.store_name || 'Warehouse';
+  const martName = locations.mart.value?.store_name || 'Mart';
+  const columns = hasWarehouse.value
+    ? ['#', 'Product', 'SKU', warehouseName, martName, 'Total', 'Reorder At', 'Mart Min', 'Action', 'Order Qty']
+    : ['#', 'Product', 'SKU', 'On Hand', 'Reorder At', 'Action', 'Order Qty'];
+  const qty = (value: number, low = false) => `<td class="num${low ? ' low' : ''}">${formatNumber(value, 3)}</td>`;
+  const body = rows.map((item, index) => {
+    const variant = item.variant_name && item.variant_name.toLowerCase() !== 'standard' ? `<div class="sub">${escapeHtml(item.variant_name)}</div>` : '';
+    const totalLow = item.quantity <= item.reorder_level;
+    const martLow = item.mart_min_level > 0 && item.mart_quantity <= item.mart_min_level;
+    const cells = hasWarehouse.value
+      ? [qty(item.warehouse_quantity), qty(item.mart_quantity, martLow), qty(item.quantity, totalLow), qty(item.reorder_level), `<td class="num">${item.mart_min_level ? formatNumber(item.mart_min_level, 3) : '-'}</td>`]
+      : [qty(item.quantity, totalLow), qty(item.reorder_level)];
+    return `<tr>
+      <td class="num">${index + 1}</td>
+      <td>${escapeHtml(item.product_name || '')}${variant}</td>
+      <td>${escapeHtml(item.sku || '')}</td>
+      ${cells.join('')}
+      <td>${escapeHtml(stockAction(item))}</td>
+      <td class="blank"></td>
+    </tr>`;
+  }).join('');
+  const business = authStore.client?.vendor?.business_name || '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+    @page { size: A4 portrait; margin: 12mm 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; }
+    header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 2mm; margin-bottom: 3mm; }
+    h1 { font-size: 14pt; margin: 0; }
+    .meta { font-size: 8pt; text-align: right; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th, td { border: 1px solid #999; padding: 1.2mm 1.5mm; text-align: left; vertical-align: top; }
+    th { background: #eee; font-size: 8pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .num { text-align: right; white-space: nowrap; }
+    .low { font-weight: 700; }
+    .sub { font-size: 7.5pt; color: #444; }
+    .blank { width: 18mm; }
+    .empty { text-align: center; padding: 6mm; }
+  </style></head><body>
+    <header>
+      <div><h1>${escapeHtml(title)}</h1>${business ? `<div>${escapeHtml(business)}</div>` : ''}</div>
+      <div class="meta">${formatDateTime(new Date())}<br>${rows.length} ${rows.length === 1 ? 'item' : 'items'}</div>
+    </header>
+    <table>
+      <thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr></thead>
+      <tbody>${body || `<tr><td class="empty" colspan="${columns.length}">Nothing to show</td></tr>`}</tbody>
+    </table>
+  </body></html>`;
+}
+
+// Prints on A4 every row matching the filters (not just the visible page). lowStock forces the low stock filter.
+async function printStock(lowStock: boolean) {
+  printing.value = true;
+  try {
+    const status = lowStock ? 'needs_stock' : stockStatus.value;
+    const response = await axios.post('stock/v1/list', { ...list.payload(), stock_status: status || undefined, page: 1, take: 10000 });
+    const title = status === 'needs_stock' ? 'Low Stock Report' : `Stock Report${status ? ` - ${statusOptions.find((option) => option.value === status)?.title}` : ''}`;
+    printDocument(stockReportDocument(response.data.data, title));
+  } catch (error) {
+    alerts.fail(error);
+  } finally {
+    printing.value = false;
+  }
+}
 
 function refillMart(item: any = null) {
   router.push({ path: '/stock-transfers/create', query: { refill: item ? item.product_variant_id : '' } });
@@ -145,6 +237,15 @@ onMounted(async () => {
           <div class="d-flex gap-2">
             <v-btn v-if="hasWarehouse && can('stock_transfers_create', 'Stock Transfer')" color="warning" variant="tonal" prepend-icon="mdi-cart-arrow-right"
               :disabled="!(list.kpis.value.refillMart > 0)" @click="refillMart()">Refill Mart ({{ list.kpis.value.refillMart ?? 0 }})</v-btn>
+            <v-menu>
+              <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" variant="outlined" color="primary" prepend-icon="mdi-printer" append-icon="mdi-chevron-down" :loading="printing">Print A4</v-btn>
+              </template>
+              <v-list density="compact">
+                <v-list-item prepend-icon="mdi-alert-outline" title="Low stock (Mart / Warehouse)" @click="printStock(true)" />
+                <v-list-item prepend-icon="mdi-format-list-bulleted" title="Current list (with filters)" @click="printStock(false)" />
+              </v-list>
+            </v-menu>
             <v-btn variant="outlined" color="primary" to="/stock/movements" prepend-icon="mdi-history">Stock Ledger</v-btn>
             <v-btn v-if="can('stock_opening', 'Stock')" color="primary" to="/stock/opening" prepend-icon="mdi-database-plus-outline">Opening Stock</v-btn>
           </div>
@@ -162,6 +263,9 @@ onMounted(async () => {
             <ListToolbar :total="list.totalItems.value" label="Total SKUs" search-placeholder="Search product, SKU, barcode..."
               exportable :exporting="list.exporting.value" @search="onSearch" @export="list.exportFile">
               <template #filters>
+                <div>
+                  <v-btn :variant="lowOnly ? 'flat' : 'outlined'" :color="lowOnly ? 'warning' : 'primary'" height="40" prepend-icon="mdi-alert-outline" @click="toggleLowOnly">Low stock only</v-btn>
+                </div>
                 <div>
                   <v-autocomplete v-model="categoryId" :items="lookups.categories.value" item-title="path" item-value="id" placeholder="All categories" clearable hide-details @update:model-value="list.reload()" />
                 </div>
