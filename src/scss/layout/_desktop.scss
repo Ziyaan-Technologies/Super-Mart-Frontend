@@ -738,3 +738,129 @@ html.pos-ui {
         }
     }
 }
+
+// DeskDialog and desk buttons are also used outside the POS (sales list, sale detail, label printing).
+// There they follow the regular app look instead of the desktop theme above.
+html:not(.pos-ui) {
+    .desk-dialog {
+        >.desk-window__caption {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            column-gap: 12px;
+            row-gap: 2px;
+            padding: 16px 20px 14px;
+            border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+
+            .desk-window__title {
+                grid-column: 1;
+                grid-row: 1;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 18px;
+                font-weight: 600;
+                line-height: 1.3;
+
+                .v-icon {
+                    color: rgb(var(--v-theme-primary));
+                }
+            }
+
+            .desk-window__subtitle {
+                grid-column: 1;
+                grid-row: 2;
+                font-size: 13px;
+                color: #5f6b7a;
+            }
+        }
+
+        .desk-dialog__close {
+            grid-column: 2;
+            grid-row: 1;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+
+            &:hover {
+                background: rgba(var(--v-theme-on-surface), 0.08);
+            }
+        }
+
+        .desk-dialog__body {
+            padding: 20px !important;
+        }
+
+        .desk-dialog__footer {
+            display: flex;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 14px 20px 18px;
+            border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+        }
+    }
+
+    .desk-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 40px;
+        padding: 0 20px;
+        border: 1px solid rgb(var(--v-theme-primary));
+        border-radius: 10px;
+        background: transparent;
+        color: rgb(var(--v-theme-primary));
+        font-size: 14px;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.15s;
+
+        &:hover {
+            background: rgba(var(--v-theme-primary), 0.08);
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        &.desk-btn--primary,
+        &.desk-btn--success,
+        &.desk-btn--danger {
+            color: #fff;
+        }
+
+        &.desk-btn--primary {
+            background: rgb(var(--v-theme-primary));
+        }
+
+        &.desk-btn--success {
+            border-color: rgb(var(--v-theme-success));
+            background: rgb(var(--v-theme-success));
+        }
+
+        &.desk-btn--danger {
+            border-color: rgb(var(--v-theme-error));
+            background: rgb(var(--v-theme-error));
+        }
+
+        &.desk-btn--primary:hover,
+        &.desk-btn--success:hover,
+        &.desk-btn--danger:hover {
+            filter: brightness(1.08);
+        }
+
+        &.desk-btn--small {
+            height: 32px;
+            padding: 0 12px;
+            font-size: 13px;
+        }
+    }
+}
