@@ -64,6 +64,7 @@ export const useMenuStore = defineStore('menu', () => {
         title: 'Items',
         items: [
           { title: 'Products', icon: 'mdi-package-variant-closed', to: '/products', action: 'products_view', subject: 'Product' },
+          { title: 'Price Labels', icon: 'mdi-tag-outline', to: '/price-labels', action: 'products_view', subject: 'Product' },
           { title: 'Categories', icon: 'mdi-shape-outline', to: '/categories', action: 'categories_view', subject: 'Category' },
           { title: 'Brands', icon: 'mdi-tag-multiple-outline', to: '/brands', action: 'brands_view', subject: 'Brand' },
           { title: 'Taxes', icon: 'mdi-percent-outline', to: '/taxes', action: 'taxes_view', subject: 'Tax' },

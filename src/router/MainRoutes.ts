@@ -315,6 +315,16 @@ const MainRoutes = {
             }
         },
         {
+            name: 'PriceLabels',
+            path: '/price-labels',
+            component: () => import('@/views/modules/product/PriceLabels.vue'),
+            meta: {
+                requiresAuth: true,
+                action: ['products_view'],
+                subject: 'Product'
+            }
+        },
+        {
             name: 'Categories',
             path: '/categories',
             component: () => import('@/views/modules/category/Category.vue'),

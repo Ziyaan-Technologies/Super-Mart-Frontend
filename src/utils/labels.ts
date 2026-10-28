@@ -100,9 +100,9 @@ function labelMarkup(item: LabelItem, layout: LabelLayout) {
     </div>`;
 }
 
-export function labelsDocument(items: LabelItem[], layout: LabelLayout) {
+// Lays labels out in rows across the roll, one row per printed page.
+function sheetDocument(labels: string[], layout: LabelLayout, labelCss: string) {
     const top = Math.min(Math.max(-5, Number(layout.top) || 0), 5);
-    const labels = items.flatMap((item) => Array.from({ length: Math.max(0, Math.floor(item.copies)) }, () => labelMarkup(item, layout)));
     const rows: string[] = [];
     for (let index = 0; index < labels.length; index += layout.columns) {
         rows.push(`<div class="row">${labels.slice(index, index + layout.columns).join('')}</div>`);
@@ -113,15 +113,62 @@ export function labelsDocument(items: LabelItem[], layout: LabelLayout) {
         html, body { width: ${pageWidth(layout)}mm; background: #fff; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .row { display: flex; gap: ${layout.gap}mm; padding-left: ${layout.offset}mm; height: ${layout.height}mm; overflow: hidden; break-after: page; page-break-after: always; }
         .row:last-child { break-after: auto; page-break-after: auto; }
-        .label { width: ${layout.width}mm; height: ${layout.height}mm; padding: 1mm; transform: translateY(${top}mm); display: grid; grid-template-rows: auto minmax(0, 8mm) auto auto; align-content: center; justify-items: center; overflow: hidden; font-family: Arial, Helvetica, sans-serif; }
+        .label { width: ${layout.width}mm; height: ${layout.height}mm; padding: 1mm; transform: translateY(${top}mm); overflow: hidden; font-family: Arial, Helvetica, sans-serif; }
+        ${labelCss}
+    </style></head><body>${rows.join('')}</body></html>`;
+}
+
+function repeat(copies: number, markup: () => string) {
+    return Array.from({ length: Math.max(0, Math.floor(copies)) }, markup);
+}
+
+export function labelsDocument(items: LabelItem[], layout: LabelLayout) {
+    const labels = items.flatMap((item) => repeat(item.copies, () => labelMarkup(item, layout)));
+    return sheetDocument(labels, layout, `
+        .label { display: grid; grid-template-rows: auto minmax(0, 8mm) auto auto; align-content: center; justify-items: center; }
         .name { width: 100%; font-size: 7pt; font-weight: 700; line-height: 1.15; text-align: center; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         .bars { height: 100%; min-height: 0; padding: 0.8mm 0 0.3mm; }
         .bars svg { display: block; width: 100%; height: 100%; }
         .code { font-size: 6.5pt; letter-spacing: 0.4pt; line-height: 1.2; }
-        .price { font-size: 8pt; font-weight: 700; line-height: 1.1; }
-    </style></head><body>${rows.join('')}</body></html>`;
+        .price { font-size: 8pt; font-weight: 700; line-height: 1.1; }`);
+}
+
+export interface PriceLabelItem {
+    price: number;
+    copies: number;
+}
+
+// Shelf tag: store name small on top, the price as large as fits underneath, with paisa raised like 64⁹⁰.
+function priceLabelMarkup(store: string, price: number, layout: LabelLayout) {
+    const [whole, fraction] = Number(price).toFixed(2).split('.');
+    const amount = Number(whole).toLocaleString('en-US');
+    const cents = fraction === '00' ? '' : fraction;
+    // Bold Arial digits are about 0.56em wide; size the price to fill the label width.
+    const characters = amount.length + (cents ? cents.length * 0.55 : 0) + (currency() ? 0.9 : 0);
+    const widthPt = ((layout.width - 2) / characters / 0.56) * (72 / 25.4);
+    const heightPt = (layout.height - 7.5) * (72 / 25.4);
+    const size = Math.max(10, Math.min(widthPt, heightPt)).toFixed(1);
+    return `<div class="label">
+        <div class="store">${escapeHtml(store)}</div>
+        <div class="amount" style="font-size:${size}pt">${currency() ? `<span class="symbol">${escapeHtml(currency())}</span>` : ''}${amount}${cents ? `<sup>${cents}</sup>` : ''}</div>
+    </div>`;
+}
+
+export function priceLabelsDocument(store: string, items: PriceLabelItem[], layout: LabelLayout) {
+    const labels = items.filter((item) => Number.isFinite(Number(item.price)) && Number(item.price) > 0)
+        .flatMap((item) => repeat(item.copies, () => priceLabelMarkup(store, item.price, layout)));
+    return sheetDocument(labels, layout, `
+        .label { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .store { width: 100%; font-size: 6.5pt; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 0.6mm; border-bottom: 0.25mm solid #000; }
+        .amount { font-weight: 900; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; padding-top: 0.6mm; }
+        .symbol { font-size: 0.45em; font-weight: 700; vertical-align: 0.9em; margin-right: 0.08em; }
+        .amount sup { font-size: 0.5em; vertical-align: 0.75em; line-height: 0; }`);
 }
 
 export function printLabels(items: LabelItem[], layout: LabelLayout) {
     printDocument(labelsDocument(items, layout));
+}
+
+export function printPriceLabels(store: string, items: PriceLabelItem[], layout: LabelLayout) {
+    printDocument(priceLabelsDocument(store, items, layout));
 }
